@@ -232,6 +232,28 @@ void resolverColisaoPersonagens()
         cpuX += nx * sobreposicao;
         cpuY += ny * sobreposicao;
 
+        // Cancela a componente vertical da velocidade que aponta para dentro
+        // da colisao: impede que o personagem que esta em cima continue
+        // "afundando" no de baixo frame a frame por causa do momentum de queda.
+        // ny > 0 significa que a CPU esta acima do jogador:
+        //   - A CPU foi empurrada pra cima (ny > 0): cancela velCpuY se estava caindo
+        //   - O Jogador foi empurrado pra baixo (-ny): cancela velJogadorY se estava subindo
+        // ny < 0 e o caso simetrico (jogador em cima da CPU).
+        if(ny > 0)
+        {
+            // CPU esta acima: se estava caindo, cancela a queda
+            if(velCpuY < 0) velCpuY = 0;
+            // Jogador esta abaixo: se estava subindo em direcao a CPU, cancela
+            if(velJogadorY > 0) velJogadorY = 0;
+        }
+        else
+        {
+            // Jogador esta acima: se estava caindo, cancela a queda
+            if(velJogadorY < 0) velJogadorY = 0;
+            // CPU esta abaixo: se estava subindo em direcao ao jogador, cancela
+            if(velCpuY > 0) velCpuY = 0;
+        }
+
         // Apos a resolucao, garante que nenhum personagem atravessou o chao.
         // Isso e necessario porque o empurrao vertical pode afundar o
         // personagem que estava embaixo pra dentro do solo.
