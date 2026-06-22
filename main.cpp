@@ -231,6 +231,20 @@ void resolverColisaoPersonagens()
 
         cpuX += nx * sobreposicao;
         cpuY += ny * sobreposicao;
+
+        // Apos a resolucao, garante que nenhum personagem atravessou o chao.
+        // Isso e necessario porque o empurrao vertical pode afundar o
+        // personagem que estava embaixo pra dentro do solo.
+        if(jogadorY < 1.0f)
+        {
+            jogadorY = 1.0f;
+            if(velJogadorY < 0) velJogadorY = 0;
+        }
+        if(cpuY < 1.0f)
+        {
+            cpuY = 1.0f;
+            if(velCpuY < 0) velCpuY = 0;
+        }
     }
 }
 
@@ -303,6 +317,28 @@ void tratarGol(float direcao)
 
         if(cruzouFundo)
             velBolaX *= -0.85f;
+    }
+
+    // Face superior (topo) da caixa do gol.
+    // Checada com as coordenadas absolutas da caixa, fora do bloco
+    // dentroDaCaixa -- assim captura tanto a bola que ja esta dentro
+    // quanto a que cai verticalmente de cima sobre o topo.
+    //
+    // xMin/xMax sao os limites horizontais reais da caixa no mundo.
+    // A bola so e barrada se o seu centro X estiver dentro desse intervalo.
+    // O gatilho e a borda INFERIOR da bola (bolaY - raioBola) descendo ate
+    // GOL_TRAVE_Y, pois e essa borda que toca o topo primeiro.
+    {
+        float xMin = (direcao > 0) ? frente : fundo;
+        float xMax = (direcao > 0) ? fundo  : frente;
+
+        bool sobreACaixa = (bolaX > xMin && bolaX < xMax);
+
+        if(sobreACaixa && velBolaY < 0 && (bolaY - raioBola) <= GOL_TRAVE_Y)
+        {
+            bolaY = GOL_TRAVE_Y + raioBola;
+            velBolaY *= -0.85f;
+        }
     }
 }
 
