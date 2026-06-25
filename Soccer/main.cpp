@@ -52,8 +52,8 @@
 //=====================================
 
 // Posicoes iniciais (usadas pra voltar tudo ao normal apos cada gol)
-const float JOGADOR_X_INICIAL = -6.0f;
-const float CPU_X_INICIAL     =  6.0f;
+const float JOGADOR_X_INICIAL = -12.0f; // dentro do gol esquerdo (X vermelho da imagem)
+const float CPU_X_INICIAL     =  12.0f; // dentro do gol direito  (X vermelho da imagem)
 // Com o pivo do campo no topo do gramado (y=0 = superficie), os personagens
 // devem repousar com o centro em y = raioCabeca (1.0), nao em y=1.0 fixo
 // (antes o chao logico era y=1, agora e y=0).
@@ -99,7 +99,7 @@ const float raioBola = 0.5f;
 // Velocidade de movimento por frame (~16ms) -- aumentadas pra deixar o jogo
 // mais agil (valores anteriores eram 0.15 e 0.10, muito lentos).
 const float velMovJogador = 0.15f;
-const float velMovCpu     = 0.10f;
+const float velMovCpu     = velMovJogador; // mesma velocidade do jogador humano
 
 // Estado das teclas. Usar estado (em vez de reagir so ao evento de tecla)
 // permite que o jogador ande e pule ao mesmo tempo, ganhando mais impulso.
@@ -145,7 +145,7 @@ const float LIMITE_CAMPO_X = GOL_FRENTE - raioCabeca;
 // Posicao "de casa": onde a CPU fica quando a bola esta fora de alcance
 // imediato, em vez de sair correndo atras dela o jogo todo. Um pouco
 // avancada da propria trave, pronta pra reagir nos dois sentidos.
-const float CPU_POSICAO_BASE_X = 5.0f;
+const float CPU_POSICAO_BASE_X = 12.0f; // posicao de repouso da CPU (dentro do proprio gol)
 
 // Quanto a CPU se "compromete" a ir ao encontro da bola quando ela esta ao
 // alcance (1.0 = vai direto nela; valores menores misturam com a posicao
@@ -155,7 +155,8 @@ const float CPU_FATOR_ENGAJAR = 0.6f;
 // A partir de quantas unidades (em X) a bola e considerada "fora de
 // alcance imediato" -- nesse caso a CPU para de perseguir e volta pra
 // posicao de casa, em vez de atravessar o campo todo atras dela.
-const float CPU_LIMIAR_ENGAJAR = 9.0f;
+const float CPU_LIMIAR_ENGAJAR = 30.0f; // CPU sempre tenta engajar
+                                         // (campo tem ~27u, 30 > qualquer distancia)
 
 // A partir de qual distancia (em X) do PROPRIO gol a bola e considerada
 // uma ameaca -- nessa faixa a CPU prioriza defesa (vai direto interceptar
@@ -183,6 +184,7 @@ bool cpuTocandoBola = false;
 const char* CAMINHO_MODELO_CAMPO = "assets/models/Campo_Oficial.glb";
 const char* CAMINHO_MODELO_TRAVE = "assets/models/Trave_Oficial.glb";
 const char* CAMINHO_MODELO_ARQUIBANCADA = "assets/models/Arquibancadas_Oficial.glb";
+const char* CAMINHO_MODELO_REFLETOR     = "assets/models/low_poly_reflector.glb";
 
 // O Origin do campo foi movido (no Blender) pra parte externa, no topo do
 // gramado -- ou seja, o (0,0,0) do modelo ja e exatamente a superficie do
@@ -243,6 +245,17 @@ const bool TRAVE_ANTIGA_VISIVEL = false;
 // em relacao ao campo, mude ARQUIBANCADA_OFFSET_X).
 const float ARQUIBANCADA_OFFSET_X = -6.3f;
 const float ARQUIBANCADA_OFFSET_Y = -2.1f;
+
+// REFLETOR -- Torres de iluminacao nos cantos da arquibancada
+// BB do modelo: X~1.9  Y~8.0  Z~3.1 (unidades Blender = unidades do jogo)
+// Ajuste REFLETOR_X para afastar/aproximar dos gols,
+//        REFLETOR_Y para subir/descer,
+//        REFLETOR_Z para afastar/aproximar da lateral.
+const float REFLETOR_X      =  GOL_X;   // alinhado com as traves (±16)
+const float REFLETOR_Y      =  0.0f;    // base no chao
+const float REFLETOR_Z      =  5.5f;    // fora da lateral do campo
+const float REFLETOR_ESCALA =  1.0f;    // mesma escala dos outros modelos
+
 
 // Profundidade fixa: o suficiente pra deixar a arquibancada inteiramente
 // atras da lateral do campo (CAMPO_LARGURA = 5), sem encostar nela.
@@ -582,6 +595,381 @@ private:
 Modelo3D modeloCampo;
 Modelo3D modeloTrave;
 Modelo3D modeloArquibancada;
+Modelo3D modeloRefletor;
+
+// ============================================================
+// MODELO ANIMADO (jogador FBX com animacao de chute)
+// ============================================================
+//
+// ESTRUTURA DO FBX (jogador2.fbx):
+//   Node Object_3     -> meshes 0 (head, mat=skin) e 1 (hair, mat=hair)
+//   Node Object_3.001 -> mesh 2 (body/clothes, mat=Scene-Root, branco)
+//
+// ANIMACOES:
+//   Anim 0: Object_3    com 'Object_3.001Action' (chute, 12 ticks @ 24tps)
+//   Anim 2: Object_3.001 com 'Object_3.001Action' (chute, 12 ticks @ 24tps)
+//   -> Para o chute completo, animamos Object_3 com anim[0] E
+//      Object_3.001 com anim[2] simultaneamente.
+//
+// CORES:
+//   Mat[0] head: DIFFUSE (0.41, 0.20, 0.11) -- tom de pele marrom
+//   Mat[1] hair: DIFFUSE (0.02, 0.01, 0.01) -- cabelo preto
+//   Mat[2] body: DIFFUSE (1.0,  1.0,  1.0)  -- roupa branca (e a cor real)
+//   Sem texturas embutidas. Usamos glMaterialfv para garantir que a
+//   cor do material seja respeitada mesmo com lighting ativo.
+//
+// BOUNDING BOX GLOBAL (pose de repouso, com todas as transformacoes de no):
+//   X[-65.17..11.76]  Y[-3.93..176.93]  Z[-133.11..9.99]
+//   Centro XZ: (-26.71, -61.56)   Altura Y: 180.87 unidades Blender
+//   -> Escala = 2.0 / 180.87 = ~0.01106
+//   -> offsetX = -(-26.71)*escala  para centralizar em X
+//   -> offsetZ = -(-61.56)*escala  para centralizar em Z
+//   -> offsetY = -(-3.93)*escala   para base ficar em y=0
+//
+// POSICIONAMENTO:
+//   Desenhamos com glTranslatef(jogadorX, jogadorY - raioCabeca, 0)
+//   e dentro da classe aplicamos:
+//     glTranslatef(offsetX, offsetY, offsetZ)  <- centraliza
+//     glScalef(escala, escala, escala)
+//   Assim o modelo fica centrado em X/Z com a base no chao.
+
+const char* CAMINHO_MODELO_JOGADOR = "assets/models/jogador2.fbx";
+
+// Indice das animacoes de chute no FBX
+// Object_3     animado por anim[0]: 'Object_3|Object_3.001Action'
+// Object_3.001 animado por anim[2]: 'Object_3.001|Object_3.001Action'
+const unsigned int ANIM_CHUTE_CABECA = 0; // anima Object_3 (cabeca/cabelo)
+const unsigned int ANIM_CHUTE_CORPO  = 2; // anima Object_3.001 (corpo/roupa)
+
+// Velocidade da animacao (multiplo de tempo real)
+const float ANIM_VELOCIDADE = 1.5f;
+
+class ModeloAnimado {
+public:
+    // Offsets de centralizacao (calculados em calcularEscala, usados no desenho)
+    float escala   = 1.0f;
+    float offsetX  = 0.0f; // translacao para centralizar em X
+    float offsetY  = 0.0f; // translacao para base do modelo em y=0
+    float offsetZ  = 0.0f; // translacao para centralizar em Z
+
+    bool carregar(const std::string& caminho) {
+        const aiScene* cena = importer.ReadFile(
+            caminho,
+            aiProcess_Triangulate |
+            aiProcess_JoinIdenticalVertices |
+            aiProcess_GenSmoothNormals |
+            aiProcess_ValidateDataStructure
+        );
+        if (!cena || cena->mNumMeshes == 0) {
+            fprintf(stderr, "[ModeloAnimado] Falha ao carregar '%s': %s\n",
+                    caminho.c_str(), importer.GetErrorString());
+            return false;
+        }
+        cenaGlobal = cena;
+
+        // Pre-carrega cores dos materiais uma unica vez
+        carregarCoresMateriais();
+
+        // Calcula escala e offsets de centralizacao
+        calcularEscala();
+
+        printf("[ModeloAnimado] Carregado: %u meshes, %u anims\n",
+               cena->mNumMeshes, cena->mNumAnimations);
+        printf("[ModeloAnimado] escala=%.5f offsetX=%.3f offsetY=%.3f offsetZ=%.3f\n",
+               escala, offsetX, offsetY, offsetZ);
+        return true;
+    }
+
+    // Desenha na pose de repouso
+    void desenharRepouso() const {
+        if (!cenaGlobal) return;
+        aplicarOffsetEscala();
+        desenharNo(cenaGlobal->mRootNode, -1.0, nullptr, nullptr);
+        glPopMatrix();
+    }
+
+    // Desenha o chute: anima Object_3 com anim[animCabeca] e
+    // Object_3.001 com anim[animCorpo] no mesmo tempo em ticks.
+    void desenharChute(float tempoTicks) const {
+        if (!cenaGlobal) return;
+        const aiAnimation* animCabeca =
+            (ANIM_CHUTE_CABECA < cenaGlobal->mNumAnimations)
+            ? cenaGlobal->mAnimations[ANIM_CHUTE_CABECA] : nullptr;
+        const aiAnimation* animCorpo  =
+            (ANIM_CHUTE_CORPO  < cenaGlobal->mNumAnimations)
+            ? cenaGlobal->mAnimations[ANIM_CHUTE_CORPO]  : nullptr;
+        aplicarOffsetEscala();
+        desenharNo(cenaGlobal->mRootNode, (double)tempoTicks, animCabeca, animCorpo);
+        glPopMatrix();
+    }
+
+    float getDuracaoChute() const {
+        if (!cenaGlobal || ANIM_CHUTE_CABECA >= cenaGlobal->mNumAnimations) return 0.5f;
+        const aiAnimation* a = cenaGlobal->mAnimations[ANIM_CHUTE_CABECA];
+        float tps = (a->mTicksPerSecond > 0) ? (float)a->mTicksPerSecond : 24.0f;
+        return (float)a->mDuration / tps;
+    }
+
+    float getTicksPerSecondChute() const {
+        if (!cenaGlobal || ANIM_CHUTE_CABECA >= cenaGlobal->mNumAnimations) return 24.0f;
+        const aiAnimation* a = cenaGlobal->mAnimations[ANIM_CHUTE_CABECA];
+        return (a->mTicksPerSecond > 0) ? (float)a->mTicksPerSecond : 24.0f;
+    }
+
+private:
+    Assimp::Importer importer;
+    const aiScene*   cenaGlobal = nullptr;
+
+    // Cores pre-carregadas por indice de material
+    struct CorMaterial { float r, g, b; };
+    std::vector<CorMaterial> coresMateriais;
+
+    // ---- Pre-carrega cores dos materiais ----
+    void carregarCoresMateriais() {
+        if (!cenaGlobal) return;
+        coresMateriais.resize(cenaGlobal->mNumMaterials);
+        for (unsigned i = 0; i < cenaGlobal->mNumMaterials; i++) {
+            const aiMaterial* mat = cenaGlobal->mMaterials[i];
+            // Tenta BASE_COLOR (PBR) primeiro, depois DIFFUSE (legado)
+            aiColor4D c4(0.8f, 0.8f, 0.8f, 1.0f);
+            aiColor3D c3(0.8f, 0.8f, 0.8f);
+            if (mat->Get(AI_MATKEY_BASE_COLOR, c4) == AI_SUCCESS) {
+                coresMateriais[i] = {c4.r, c4.g, c4.b};
+            } else if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, c3) == AI_SUCCESS) {
+                coresMateriais[i] = {c3.r, c3.g, c3.b};
+            } else {
+                coresMateriais[i] = {0.8f, 0.8f, 0.8f};
+            }
+            printf("[ModeloAnimado] Mat[%u]: (%.2f, %.2f, %.2f)\n",
+                   i, coresMateriais[i].r, coresMateriais[i].g, coresMateriais[i].b);
+        }
+    }
+
+    // ---- Aplica pushMatrix + offset de centralizacao + escala ----
+    void aplicarOffsetEscala() const {
+        glPushMatrix();
+        // Primeiro translada para centralizar o modelo em X/Z
+        // e colocar a base em y=0
+        glTranslatef(offsetX, offsetY, offsetZ);
+        glScalef(escala, escala, escala);
+    }
+
+    // ---- Busca canal de animacao por nome de no ----
+    aiNodeAnim* buscarCanal(const aiAnimation* anim, const std::string& nome) const {
+        if (!anim) return nullptr;
+        for (unsigned i = 0; i < anim->mNumChannels; i++)
+            if (anim->mChannels[i]->mNodeName.C_Str() == nome)
+                return anim->mChannels[i];
+        return nullptr;
+    }
+
+    aiVector3D interpolarPos(const aiNodeAnim* ch, double t) const {
+        if (ch->mNumPositionKeys == 1) return ch->mPositionKeys[0].mValue;
+        for (unsigned i = 0; i + 1 < ch->mNumPositionKeys; i++) {
+            if (t < ch->mPositionKeys[i+1].mTime) {
+                double dt = ch->mPositionKeys[i+1].mTime - ch->mPositionKeys[i].mTime;
+                float f = (dt > 0) ? (float)((t - ch->mPositionKeys[i].mTime) / dt) : 0.0f;
+                const aiVector3D& a = ch->mPositionKeys[i].mValue;
+                const aiVector3D& b = ch->mPositionKeys[i+1].mValue;
+                return a + (b - a) * f;
+            }
+        }
+        return ch->mPositionKeys[ch->mNumPositionKeys-1].mValue;
+    }
+
+    aiQuaternion interpolarRot(const aiNodeAnim* ch, double t) const {
+        if (ch->mNumRotationKeys == 1) return ch->mRotationKeys[0].mValue;
+        for (unsigned i = 0; i + 1 < ch->mNumRotationKeys; i++) {
+            if (t < ch->mRotationKeys[i+1].mTime) {
+                double dt = ch->mRotationKeys[i+1].mTime - ch->mRotationKeys[i].mTime;
+                float f = (dt > 0) ? (float)((t - ch->mRotationKeys[i].mTime) / dt) : 0.0f;
+                aiQuaternion out;
+                aiQuaternion::Interpolate(out, ch->mRotationKeys[i].mValue,
+                                               ch->mRotationKeys[i+1].mValue, f);
+                return out.Normalize();
+            }
+        }
+        return ch->mRotationKeys[ch->mNumRotationKeys-1].mValue;
+    }
+
+    aiVector3D interpolarEscala(const aiNodeAnim* ch, double t) const {
+        if (ch->mNumScalingKeys == 1) return ch->mScalingKeys[0].mValue;
+        for (unsigned i = 0; i + 1 < ch->mNumScalingKeys; i++) {
+            if (t < ch->mScalingKeys[i+1].mTime) {
+                double dt = ch->mScalingKeys[i+1].mTime - ch->mScalingKeys[i].mTime;
+                float f = (dt > 0) ? (float)((t - ch->mScalingKeys[i].mTime) / dt) : 0.0f;
+                const aiVector3D& a = ch->mScalingKeys[i].mValue;
+                const aiVector3D& b = ch->mScalingKeys[i+1].mValue;
+                return a + (b - a) * f;
+            }
+        }
+        return ch->mScalingKeys[ch->mNumScalingKeys-1].mValue;
+    }
+
+    aiMatrix4x4 transformacaoDoNo(const aiNode* node, double t, const aiAnimation* anim) const {
+        aiNodeAnim* ch = buscarCanal(anim, node->mName.C_Str());
+        if (!ch) return node->mTransformation;
+
+        aiVector3D   pos = interpolarPos(ch, t);
+        aiQuaternion rot = interpolarRot(ch, t);
+        aiVector3D   sc  = interpolarEscala(ch, t);
+
+        aiMatrix4x4 mPos, mRot, mSc;
+        aiMatrix4x4::Translation(pos, mPos);
+        mRot = aiMatrix4x4(rot.GetMatrix());
+        aiMatrix4x4::Scaling(sc, mSc);
+        return mPos * mRot * mSc;
+    }
+
+    // Desenha recursivamente.
+    // animCabeca: animacao para nos que NAO sao Object_3.001 (cabeca/cabelo)
+    // animCorpo:  animacao para Object_3.001 (corpo/roupa)
+    // t < 0 => pose de repouso (sem animacao)
+    void desenharNo(const aiNode* node, double t,
+                    const aiAnimation* animCabeca,
+                    const aiAnimation* animCorpo) const
+    {
+        // Escolhe qual animacao usar para ESTE no
+        const aiAnimation* animParaEsteNo = nullptr;
+        if (t >= 0.0) {
+            std::string nome = node->mName.C_Str();
+            if (nome == "Object_3.001")
+                animParaEsteNo = animCorpo;
+            else
+                animParaEsteNo = animCabeca;
+        }
+
+        aiMatrix4x4 local = transformacaoDoNo(node, t, animParaEsteNo);
+
+        // Assimp usa row-major; OpenGL usa column-major. Transpomos:
+        float m[16];
+        m[0]=local.a1; m[1]=local.b1; m[2]=local.c1; m[3]=local.d1;
+        m[4]=local.a2; m[5]=local.b2; m[6]=local.c2; m[7]=local.d2;
+        m[8]=local.a3; m[9]=local.b3; m[10]=local.c3; m[11]=local.d3;
+        m[12]=local.a4; m[13]=local.b4; m[14]=local.c4; m[15]=local.d4;
+
+        glPushMatrix();
+        glMultMatrixf(m);
+
+        for (unsigned mi = 0; mi < node->mNumMeshes; mi++)
+            desenharMesh(cenaGlobal->mMeshes[node->mMeshes[mi]]);
+
+        for (unsigned i = 0; i < node->mNumChildren; i++)
+            desenharNo(node->mChildren[i], t, animCabeca, animCorpo);
+
+        glPopMatrix();
+    }
+
+    void desenharMesh(const aiMesh* mesh) const {
+        // Usa o MESMO padrao do Modelo3D (campo/trave): apenas glColor3f.
+        // O init() habilita GL_COLOR_MATERIAL com GL_AMBIENT_AND_DIFFUSE,
+        // entao glColor3f alimenta automaticamente diffuse e ambient do
+        // material OpenGL. Chamar glMaterialfv QUEBRA esse mecanismo pois
+        // o valor fixo sobrescreve o tracking de glColor3f, causando as
+        // cores erradas e flashes pretos.
+        float r = 0.8f, g = 0.8f, b = 0.8f;
+        if (mesh->mMaterialIndex < (unsigned)coresMateriais.size()) {
+            r = coresMateriais[mesh->mMaterialIndex].r;
+            g = coresMateriais[mesh->mMaterialIndex].g;
+            b = coresMateriais[mesh->mMaterialIndex].b;
+        }
+
+        // glColor3f -> GL_COLOR_MATERIAL -> alimenta GL_DIFFUSE + GL_AMBIENT
+        glColor3f(r, g, b);
+
+        // O FBX tem Sketchfab_model.001 com escala Y negativa, o que inverte
+        // as normais de alguns meshes. Desabilitar culling garante que ambas
+        // as faces sejam renderizadas (GL_LIGHT_MODEL_TWO_SIDE cuida da
+        // iluminacao correta). Sera reabilitado apos o desenho do jogador.
+        glDisable(GL_CULL_FACE);
+
+        glBegin(GL_TRIANGLES);
+        for (unsigned f = 0; f < mesh->mNumFaces; f++) {
+            const aiFace& face = mesh->mFaces[f];
+            for (unsigned v = 0; v < face.mNumIndices; v++) {
+                unsigned idx = face.mIndices[v];
+                if (mesh->HasNormals())
+                    glNormal3f(mesh->mNormals[idx].x,
+                               mesh->mNormals[idx].y,
+                               mesh->mNormals[idx].z);
+                glVertex3f(mesh->mVertices[idx].x,
+                           mesh->mVertices[idx].y,
+                           mesh->mVertices[idx].z);
+            }
+        }
+        glEnd();
+    }
+
+    // Calcula escala e offsets para centralizar o modelo e
+    // colocar sua base exatamente em y=0.
+    void calcularEscala() {
+        if (!cenaGlobal) return;
+
+        float xmin=1e9f, xmax=-1e9f;
+        float ymin=1e9f, ymax=-1e9f;
+        float zmin=1e9f, zmax=-1e9f;
+        bool tem = false;
+
+        calcularBBNo(cenaGlobal->mRootNode, aiMatrix4x4(),
+                     xmin,xmax,ymin,ymax,zmin,zmax,tem);
+
+        if (!tem) { escala = 0.01f; return; }
+
+        float altura = ymax - ymin;
+        if (altura < 0.001f) { escala = 0.01f; return; }
+
+        // Altura desejada: 2 * raioCabeca (personagem inteiro)
+        float alturaDesejada = 2.0f * raioCabeca;
+        escala = alturaDesejada / altura;
+
+        // Offsets em espaco do modelo (ANTES da escala): centralizamos
+        // o modelo em XZ e colocamos a base (ymin) em y=0.
+        // No desenho fazemos: translate(offsetX, offsetY, offsetZ) * scale(escala)
+        // Entao os offsets ja estao em unidades do JOGO (apos a escala).
+        // Calculamos como: offset_mundo = -centro_modelo * escala
+        float centroX = (xmin + xmax) * 0.5f;
+        float centroZ = (zmin + zmax) * 0.5f;
+        offsetX = -centroX * escala;
+        offsetY = -ymin   * escala; // base do modelo vai para y=0
+        offsetZ = -centroZ * escala;
+
+        printf("[ModeloAnimado] BB global: X[%.1f..%.1f] Y[%.1f..%.1f] Z[%.1f..%.1f]\n",
+               xmin,xmax,ymin,ymax,zmin,zmax);
+        printf("[ModeloAnimado] escala=%.5f offsets=(%.3f, %.3f, %.3f)\n",
+               escala, offsetX, offsetY, offsetZ);
+    }
+
+    void calcularBBNo(const aiNode* node, aiMatrix4x4 parentGlobal,
+                      float& xmin, float& xmax,
+                      float& ymin, float& ymax,
+                      float& zmin, float& zmax, bool& tem) const {
+        aiMatrix4x4 global = parentGlobal * node->mTransformation;
+        for (unsigned mi = 0; mi < node->mNumMeshes; mi++) {
+            const aiMesh* mesh = cenaGlobal->mMeshes[node->mMeshes[mi]];
+            for (unsigned v = 0; v < mesh->mNumVertices; v++) {
+                aiVector3D p = global * mesh->mVertices[v];
+                if(p.x<xmin)xmin=p.x; if(p.x>xmax)xmax=p.x;
+                if(p.y<ymin)ymin=p.y; if(p.y>ymax)ymax=p.y;
+                if(p.z<zmin)zmin=p.z; if(p.z>zmax)zmax=p.z;
+                tem = true;
+            }
+        }
+        for (unsigned i = 0; i < node->mNumChildren; i++)
+            calcularBBNo(node->mChildren[i], global,
+                         xmin,xmax,ymin,ymax,zmin,zmax,tem);
+    }
+};
+
+// Instancia global do modelo do jogador (compartilhado pelos dois lados)
+ModeloAnimado modeloJogador;
+
+// ---- Estado de animacao ----
+// O jogador humano tem animacao de chute na tecla Z
+float tempoAnimChuteJogador = -1.0f; // -1 = nao animando
+float tempoAnimChuteCPU     = -1.0f;
+
+// Offset Y para alinhar a base do modelo com o chao do jogo.
+float jogadorModeloOffsetY = 0.0f;
 //=====================================
 // TEXTO
 //=====================================
@@ -654,13 +1042,21 @@ void resetarPosicoes()
 //            aplicado uma vez por toque -- sem isso, enquanto a bola e a
 //            cabeca ficam sobrepostas por alguns frames, ela era "rebatida"
 //            de novo a cada frame e ficava pulando pra cima sem parar.
+// Retorna true se a bola esta dentro do raio de colisao do personagem em (px,py)
+static bool bolaEmContato(float px, float py)
+{
+    float dx = bolaX - px;
+    float dy = bolaY - py;
+    float dist2 = dx*dx + dy*dy;
+    float raio = raioCabeca + raioBola;
+    return dist2 < raio*raio && dist2 > 0.0001f*0.0001f;
+}
+
 void colisaoJogador(float px, float py, float velMovimentoJogador, float direcaoAtaque, bool &jaTocando)
 {
     float dx = bolaX - px;
     float dy = bolaY - py;
-
     float dist = sqrt(dx*dx + dy*dy);
-
     float raioColisao = raioCabeca + raioBola;
 
     if(dist < raioColisao && dist > 0.0001f)
@@ -670,28 +1066,37 @@ void colisaoJogador(float px, float py, float velMovimentoJogador, float direcao
 
         if(!jaTocando)
         {
-            // A bola sempre sai na direcao REAL do toque (nx, ny) -- e isso, e
-            // nao a intencao ofensiva do personagem, que decide pra onde ela
-            // vai. Antes a direcao do gol adversario pesava mais que o toque
-            // em si, e por isso a bola podia ser "puxada" pro lado contrario
-            // de onde realmente bateu (ex: tocar nas costas da cabeca e ainda
-            // assim ir pra frente). Agora isso nao acontece mais.
-            float forca = 0.16f;
-            velBolaX = nx * forca;
-            velBolaY = fabs(ny) * forca + 0.05f;
+            // ── Impulso vetorial completo no primeiro frame de contato ──
+            // A velocidade resultante e sempre na direcao normal de saida (nx,ny)
+            // com magnitude base + contribuicoes do movimento e intencao ofensiva.
+            float forca = 0.18f;
 
-            // A intencao ofensiva (mandar pro gol adversario) e a corrida de
-            // quem cabeceou so reforcam essa direcao com um empurraozinho
-            // extra -- nunca multiplicam o suficiente pra inverter o sentido
-            // real do toque.
-            velBolaX += direcaoAtaque * 0.03f;
+            // Componente na direcao normal: garante que a bola SEMPRE sai para longe
+            float velNormal = velBolaX * nx + velBolaY * ny; // vel atual projetada
+            // Velocidade minima de separacao na direcao normal
+            float velMinSep = forca;
+            // Se a bola ja esta indo para longe (velNormal > 0), ainda assim
+            // aplicamos pelo menos velMinSep para garantir separacao rapida
+            float impulsoNormal = (velNormal < velMinSep) ? (velMinSep - velNormal) : 0.0f;
+
+            velBolaX += nx * impulsoNormal;
+            velBolaY += ny * impulsoNormal;
+
+            // Empurrao ofensivo (direcao do gol adversario) e da corrida
+            velBolaX += direcaoAtaque * 0.04f;
             velBolaX += velMovimentoJogador * 0.25f;
+
+            // Componente Y minima para garantir que a bola suba levemente
+            if(velBolaY < 0.04f) velBolaY = 0.04f;
 
             jaTocando = true;
         }
 
-        // Empurra a bola pra fora da cabeca, pra ela nao ficar "colada"/atravessando
-        float sobreposicao = raioColisao - dist;
+        // ── Separacao positional completa em um unico frame ──
+        // Margem generosa (10% do raio de colisao) garante que no proximo
+        // frame dist > raioColisao e jaTocando seja resetado corretamente.
+        float margem = raioColisao * 0.12f;
+        float sobreposicao = raioColisao - dist + margem;
         bolaX += nx * sobreposicao;
         bolaY += ny * sobreposicao;
     }
@@ -699,6 +1104,61 @@ void colisaoJogador(float px, float py, float velMovimentoJogador, float direcao
     {
         jaTocando = false;
     }
+}
+
+// ── Resolver colisao dupla (bola entre dois jogadores) ──────────────────────
+// Chamado DEPOIS de ambos os colisaoJogador(). Se a bola ainda estiver em
+// contato com AMBOS simultaneamente, os dois push-outs anteriores se
+// anularam parcialmente e a bola ficou presa. Detectamos isso aqui e
+// expelimos a bola para cima com impulso minimo garantido.
+void resolverColisaoDupla()
+{
+    bool tocaJogador = bolaEmContato(jogadorX, jogadorY);
+    bool tocaCpu     = bolaEmContato(cpuX,     cpuY);
+
+    if(!tocaJogador || !tocaCpu)
+        return; // nao e colisao dupla, nada a fazer
+
+    // Vetor da bola em relacao ao ponto medio entre os dois personagens
+    float meioPX = (jogadorX + cpuX) * 0.5f;
+    float meioPY = (jogadorY + cpuY) * 0.5f;
+
+    float dx = bolaX - meioPX;
+    float dy = bolaY - meioPY;
+    float dist = sqrt(dx*dx + dy*dy);
+
+    float ex, ey; // direcao de ejecao
+    if(dist > 0.001f)
+    {
+        ex = dx / dist;
+        ey = dy / dist;
+    }
+    else
+    {
+        // Bola exatamente no meio: ejeta para cima
+        ex = 0.0f;
+        ey = 1.0f;
+    }
+
+    // Garante componente vertical positiva (para cima) para destravar
+    if(ey < 0.3f) ey = 0.3f;
+    float len = sqrt(ex*ex + ey*ey);
+    ex /= len; ey /= len;
+
+    // Impulso de ejecao: sobrescreve velocidade atual completamente
+    float forcaEjecao = 0.20f;
+    velBolaX = ex * forcaEjecao;
+    velBolaY = ey * forcaEjecao;
+
+    // Posiciona a bola a distancia segura do meio dos dois personagens
+    // na direcao de ejecao, garantindo que saia das duas zonas de colisao
+    float distSegura = raioCabeca + raioBola + 0.15f;
+    bolaX = meioPX + ex * distSegura;
+    bolaY = meioPY + ey * distSegura;
+
+    // Reseta os flags de toque para que ambos possam tocar novamente
+    jogadorTocandoBola = false;
+    cpuTocandoBola     = false;
 }
 
 //=====================================
@@ -1012,9 +1472,11 @@ void update(int)
 
         if(bolaEmSaque)
         {
-            // So ganha velocidade horizontal depois de cair reto e tocar o chao
-            // Velocidade aumentada (antes 0.08, muito lenta)
-            velBolaX = (rand()%2==0) ? 0.18f : -0.18f;
+            // Bola terminou o saque (caiu reta ate o chao).
+            // Nao recebe velX aqui -- o quique normal de velBolaY*-0.8
+            // ja aconteceu acima. Apenas libera o movimento horizontal
+            // para que os jogadores possam interagir com ela normalmente.
+            velBolaX = 0.0f; // sem ricochete lateral aleatorio
             bolaEmSaque = false;
         }
     }
@@ -1054,30 +1516,62 @@ void update(int)
     //      de casa (pra nao ficar "colada" na bola o tempo todo).
     //   3) Bola fora de alcance -> volta/fica numa posicao estrategica
     //      de casa, em vez de perseguir o campo todo.
-    PrevisaoBola previsao = preverBola(20);
+    // Previsao mais longa (40 passos) para decisoes mais antecipadas
+    PrevisaoBola previsao  = preverBola(40);
+    PrevisaoBola previsao8 = preverBola(8); // curto prazo para pulo
+
+    // ---- Decidir alvo horizontal da CPU ----
+    //
+    // 3 modos de operacao baseados na posicao da bola:
+    //
+    //  DEFESA URGENTE: bola no lado da CPU e vindo em direcao ao gol.
+    //    CPU se posiciona entre a bola e o gol (intercepta trajetoria).
+    //
+    //  ATAQUE: bola no lado do jogador ou no centro.
+    //    CPU avanca em direcao a bola para chutar ao gol.
+    //    Usa previsao longa para antecipar chegada.
+    //
+    //  POSICIONAMENTO: bola longe e indo para longe do gol da CPU.
+    //    CPU recua um pouco para posicao estrategica, sem ir ate o fundo.
 
     float alvoCpuX;
-    bool bolaAmeacandoGol = (bolaX > CPU_LIMIAR_DEFESA_X);
+    float distBolaGolCpu = bolaX; // positivo = perto do gol da CPU (direita)
+
+    // Bola ameacando: no lado da CPU (bolaX > limiar) com velocidade positiva
+    bool bolaVindoParaCpu  = (velBolaX > 0.0f);
+    bool bolaNoLadoCpu     = (bolaX > 0.0f);
+    bool bolaAmeacandoGol  = (bolaX > CPU_LIMIAR_DEFESA_X) && bolaVindoParaCpu;
+    bool bolaLongeEInofens = (bolaX < -5.0f); // bola bem no lado do jogador
 
     if(bolaAmeacandoGol)
     {
+        // DEFESA: posiciona no X previsto da bola, priorizando interceptar
         alvoCpuX = previsao.x;
+    }
+    else if(bolaLongeEInofens)
+    {
+        // POSICIONAMENTO: bola no lado do jogador e nao e ameaca.
+        // CPU avanca ate o meio campo para pressionar, mas com cautela.
+        // Fica em X=2 (um pouco alem do centro) sem ir mais fundo.
+        float alvoAtaque = previsao.x;
+        float alvoEstrategico = 2.0f; // pressiona sem se expor
+        // Mistura: 70% na previsao (quer atacar) + 30% estrategico
+        alvoCpuX = alvoAtaque * 0.7f + alvoEstrategico * 0.3f;
+        // Nunca passa do meio campo atacando
+        if(alvoCpuX < -LIMITE_CAMPO_X * 0.5f)
+            alvoCpuX = -LIMITE_CAMPO_X * 0.5f;
     }
     else
     {
-        float distanciaBola = fabs(bolaX - cpuX);
-
-        if(distanciaBola > CPU_LIMIAR_ENGAJAR)
-            alvoCpuX = CPU_POSICAO_BASE_X;
-        else
-            alvoCpuX = previsao.x * CPU_FATOR_ENGAJAR + CPU_POSICAO_BASE_X * (1.0f - CPU_FATOR_ENGAJAR);
+        // ATAQUE: bola no centro ou lado da CPU mas sem ameaca imediata.
+        // CPU persegue diretamente a previsao da bola.
+        alvoCpuX = previsao.x;
     }
 
     if(alvoCpuX >  LIMITE_CAMPO_X) alvoCpuX =  LIMITE_CAMPO_X;
     if(alvoCpuX < -LIMITE_CAMPO_X) alvoCpuX = -LIMITE_CAMPO_X;
 
-    // Zona-morta: so se move se realmente vale a pena, pra nao ficar
-    // "tremendo"/trocando de direcao toda hora perto do alvo
+    // Zona-morta: evita tremor proximo ao alvo
     float distAoAlvo = alvoCpuX - cpuX;
     float movCpuAtual = 0.0f;
 
@@ -1092,18 +1586,28 @@ void update(int)
         movCpuAtual = -velMovCpu;
     }
 
-    // O pulo continua sendo decidido pela posicao REAL (atual) da bola,
-    // nao pela previsao -- pular e uma decisao de "agora", e so deve
-    // acontecer quando ha uma chance real de tocar nela: distancia real
-    // de alcance, bola subindo/proxima da altura da cabeca, e personagem
-    // no chao (pra nao "pular de novo" no meio de outro pulo). Isso evita
-    // que a CPU pule pra qualquer bola so' porque ela esta numa faixa
-    // larga de X/Y, e -- combinado com o toque unico por contato em
-    // colisaoJogador -- evita que ela fique cabeceando pra cima sem parar.
+    // ---- Decisao de pulo da CPU ----
+    // Pula quando:
+    //  a) Bola esta proxima e acessivel (toque possivel neste frame)
+    //  b) Bola vai cair proxima nos proximos 8 frames (pulo antecipado)
     float distCpuBola = sqrt((bolaX-cpuX)*(bolaX-cpuX) + (bolaY-cpuY)*(bolaY-cpuY));
-    bool chanceRealDeTocar = distCpuBola < 2.4f && bolaY > cpuY && bolaY < cpuY + 3.0f;
 
-    if(chanceRealDeTocar && cpuY <= raioCabeca + 0.05f)
+    // Condicao 1: bola ja esta no raio de toque
+    bool bolaNaAltura    = (bolaY > cpuY) && (bolaY < cpuY + 2.5f);
+    bool bolaProxima     = distCpuBola < (raioCabeca + raioBola + 0.5f);
+    bool chanceImediata  = bolaProxima && bolaNaAltura;
+
+    // Condicao 2: previsao de curto prazo indica que a bola vai chegar perto
+    float distPrev = fabs(previsao8.x - cpuX);
+    bool bolaCaindoPerto = (distPrev < raioCabeca + 1.2f) && (previsao8.y < cpuY + 2.5f);
+
+    // Condicao 3: bola esta no lado da CPU e CPU pode intercepta-la pulando
+    bool pularParaInterceptar = bolaNoLadoCpu && (bolaY < cpuY + 3.0f) && (distCpuBola < 3.0f);
+
+    bool devePular = (chanceImediata || bolaCaindoPerto || pularParaInterceptar)
+                     && cpuY <= raioCabeca + 0.05f;
+
+    if(devePular)
         velCpuY = 0.12f;
 
     velCpuY += gravidade * dt;
@@ -1127,6 +1631,8 @@ void update(int)
     // Colisoes com a bola (uma vez por toque, ver colisaoJogador)
     colisaoJogador(jogadorX, jogadorY, movJogadorAtual, 1.0f, jogadorTocandoBola);
     colisaoJogador(cpuX, cpuY, movCpuAtual, -1.0f, cpuTocandoBola);
+    // Caso especial: bola ainda entre os dois apos os dois push-outs
+    resolverColisaoDupla();
 
     // Gol e trave dos dois lados
     tratarGol(1.0f);
@@ -1137,6 +1643,20 @@ void update(int)
 
     // Guarda a posicao desse frame pra detectar o cruzamento de linha no proximo
     bolaXAnterior = bolaX;
+
+    // ---- Animacao de chute do jogador (tecla Z) ----
+    // Avanca o tempo da animacao pelo dt real do frame. Quando a animacao
+    // termina (tempo >= duracao), volta ao estado de repouso (-1).
+    if(tempoAnimChuteJogador >= 0.0f)
+    {
+        // dt ja e o fator de escala de tempo (1.0 = 16ms nominais)
+        // Convertemos pra segundos reais para avancar o tempo da animacao
+        float dtAnimSeg = (16.0f * dt) / 1000.0f;
+        tempoAnimChuteJogador += dtAnimSeg * ANIM_VELOCIDADE;
+        float duracaoChute = modeloJogador.getDuracaoChute();
+        if(duracaoChute > 0.0f && tempoAnimChuteJogador >= duracaoChute)
+            tempoAnimChuteJogador = -1.0f; // animacao concluida, volta ao repouso
+    }
 
     glutPostRedisplay();
     glutTimerFunc(16, update, 0);
@@ -1165,6 +1685,24 @@ void tecladoEspecialSolto(int key, int, int)
         case GLUT_KEY_UP:    teclaCima     = false; break;
     }
 }
+
+// Teclado normal (letras/numeros) -- tecla Z dispara animacao de chute
+void tecladoNormal(unsigned char key, int, int)
+{
+    switch(key)
+    {
+        case 'z':
+        case 'Z':
+            // So inicia se nao estiver ja animando
+            if(tempoAnimChuteJogador < 0.0f)
+                tempoAnimChuteJogador = 0.0f;
+            break;
+        case 27: // ESC
+            exit(0);
+            break;
+    }
+}
+
 
 //=====================================
 // CAMPO
@@ -1200,6 +1738,48 @@ void desenharArquibancada()
 
     modeloArquibancada.desenhar();
     glPopMatrix();
+}
+
+//=====================================
+// REFLETORES
+//=====================================
+
+// Dois refletores nos cantos da arquibancada (esquerdo e direito).
+// O modelo tem a base em Y=0 e sobe ~8 unidades -- ficam como torres
+// de iluminacao nos cantos laterais do estadio.
+// direcaoX: +1 para refletor direito, -1 para esquerdo.
+void desenharRefletor(float direcaoX, float direcaoZ)
+{
+    glPushMatrix();
+
+    // Posicao: canto da arquibancada
+    glTranslatef(direcaoX * REFLETOR_X, REFLETOR_Y, direcaoZ * REFLETOR_Z);
+
+    // Rotacao: refletor esquerdo (direcaoX < 0) gira 180 graus em Y
+    // para espelhar corretamente; refletor do lado -Z gira em Y tambem
+    float rotY = 0.0f;
+    if(direcaoX < 0.0f) rotY += 180.0f;
+    if(direcaoZ < 0.0f) rotY += 180.0f;
+    if(rotY != 0.0f) glRotatef(rotY, 0.0f, 1.0f, 0.0f);
+
+    if(REFLETOR_ESCALA != 1.0f)
+        glScalef(REFLETOR_ESCALA, REFLETOR_ESCALA, REFLETOR_ESCALA);
+
+    modeloRefletor.desenhar();
+
+    glPopMatrix();
+}
+
+void desenharRefletores()
+{
+    // Canto esquerdo-frente  (-X, +Z)
+    desenharRefletor(-1.0f,  1.0f);
+    // Canto direito-frente   (+X, +Z)
+    desenharRefletor( 1.0f,  1.0f);
+    // Canto esquerdo-fundo   (-X, -Z)
+    desenharRefletor(-1.0f, -1.0f);
+    // Canto direito-fundo    (+X, -Z)
+    desenharRefletor( 1.0f, -1.0f);
 }
 
 //=====================================
@@ -1373,6 +1953,7 @@ void display()
 
     desenharCampo();
     desenharArquibancada();
+    desenharRefletores();
 
     // Usa GOL_X (= 14) -- antes estava hardcoded como 13, desalinhando a trave esquerda
     desenharGol(-GOL_X, -1.0f);
@@ -1381,42 +1962,36 @@ void display()
     desenharParedeFundo(-PAREDE_FUNDO_X);
     desenharParedeFundo(PAREDE_FUNDO_X);
 
-    // Jogador
+    // ---- Jogador (modelo FBX, lado esquerdo, ataca para +X / direita) ----
+    // jogadorY e o centro logico do personagem (mesma posicao que a esfera usava).
+    // O modelo ja cuida de colocar sua base em y=0 internamente (via offsetY),
+    // entao so precisamos transladar para (jogadorX, jogadorY - raioCabeca, 0):
+    // assim a base do modelo fica em jogadorY - raioCabeca (= chao quando parado).
+    //
+    // Rotacao: o FBX foi exportado com a frente do personagem em uma direcao
+    // arbitraria. Ajustamos com glRotatef para ele olhar para +X (direita).
+    // Se parecer virado ao contrario, troque -90 por 90.
     glPushMatrix();
-
-    glColor3f(0,0,1);
-
-    glTranslatef(
-        jogadorX,
-        jogadorY,
-        0
-    );
-
-    glutSolidSphere(
-        raioCabeca,
-        30,
-        30
-    );
-
+    glTranslatef(jogadorX, jogadorY - raioCabeca, 0.0f);
+    glRotatef(-90.0f, 0.0f, 1.0f, 0.0f);
+    if (tempoAnimChuteJogador >= 0.0f) {
+        float tps = modeloJogador.getTicksPerSecondChute();
+        modeloJogador.desenharChute(tempoAnimChuteJogador * tps);
+    } else {
+        modeloJogador.desenharRepouso();
+    }
     glPopMatrix();
 
-    // CPU
+    // ---- CPU (mesmo modelo, lado direito, ataca para -X / esquerda) ----
     glPushMatrix();
-
-    glColor3f(1,0,0);
-
-    glTranslatef(
-        cpuX,
-        cpuY,
-        0
-    );
-
-    glutSolidSphere(
-        raioCabeca,
-        30,
-        30
-    );
-
+    glTranslatef(cpuX, cpuY - raioCabeca, 0.0f);
+    glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+    if (tempoAnimChuteCPU >= 0.0f) {
+        float tps = modeloJogador.getTicksPerSecondChute();
+        modeloJogador.desenharChute(tempoAnimChuteCPU * tps);
+    } else {
+        modeloJogador.desenharRepouso();
+    }
     glPopMatrix();
 
     // Bola
@@ -1467,6 +2042,15 @@ void init()
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
     glEnable(GL_COLOR_MATERIAL);
 
+    // GL_NORMALIZE: reescala normais apos glScalef, necessario para
+    // iluminacao correta no modelo do jogador (escala nao-uniforme do FBX).
+    glEnable(GL_NORMALIZE);
+
+    // GL_LIGHT_MODEL_TWO_SIDE: ilumina ambas as faces dos triangulos.
+    // Necessario porque o FBX tem normais invertidas em alguns meshes
+    // (escala Y negativa no node Sketchfab_model.001).
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+
     // Luz ambiente global: sem isso, faces voltadas pra longe da luz ficam
     // completamente pretas, escondendo a cor dos modelos do Blender.
     // 0.4 e um valor moderado -- suficiente pra revelar a cor em todas as
@@ -1505,6 +2089,12 @@ void init()
 
     if(!modeloArquibancada.carregar(CAMINHO_MODELO_ARQUIBANCADA))
         fprintf(stderr, "[Aviso] Arquibancada 3D nao carregada -- nada sera desenhado atras do campo.\n");
+
+    if(!modeloRefletor.carregar(CAMINHO_MODELO_REFLETOR))
+        fprintf(stderr, "[Aviso] Refletor 3D nao carregado.\n");
+
+    if(!modeloJogador.carregar(CAMINHO_MODELO_JOGADOR))
+        fprintf(stderr, "[Aviso] Modelo do jogador nao carregado.\n");
 }
 
 //=====================================
@@ -1564,6 +2154,10 @@ int main(int argc,char** argv)
 
     glutSpecialUpFunc(
         tecladoEspecialSolto
+    );
+
+    glutKeyboardFunc(
+        tecladoNormal
     );
 
     glutTimerFunc(
