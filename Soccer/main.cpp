@@ -127,7 +127,7 @@ const float GOL_TRAVE_Y = 3.0f;             // altura da trave (topo da abertura
 // do campo, totalmente atras das traves -- invisivel, so fisica.
 const float PAREDE_FUNDO_X = 16.0f;
 const float CAMPO_LARGURA  = 5.0f; // campo vai de -5 a 5 em Z (ver desenharCampo)
-const float PAREDE_ALTURA  = 8.0f;
+const float PAREDE_ALTURA  = 20.0f;
 
 // Os jogadores nao podem entrar dentro do gol: o limite e a linha do
 // travessao/trave, descontando o raio da cabeca (senao o CENTRO do
