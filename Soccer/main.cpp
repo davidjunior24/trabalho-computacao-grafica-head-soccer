@@ -125,6 +125,12 @@ const float GOL_TRAVE_Y = 3.0f;             // altura da trave (topo da abertura
 // (de -17.5 a +17.5). As traves ficam centradas em x=14 e tem GOL_META=1.5
 // de profundidade, indo ate x=15.5. A parede fica em x=17.5, na borda real
 // do campo, totalmente atras das traves -- invisivel, so fisica.
+// Teto invisivel: impede a bola de sair da area visivel da camera.
+// Calculado geometricamente: com gluLookAt(0,10,20,0,0,0) e FOV=45,
+// a bola (em x=0,z=0) sai do topo da tela em Y~9. O teto fica em
+// Y=8.5 para manter a bola sempre visivel com uma margem segura.
+const float TETO_Y = 8.5f;
+
 const float PAREDE_FUNDO_X = 16.0f;
 const float CAMPO_LARGURA  = 5.0f; // campo vai de -5 a 5 em Z (ver desenharCampo)
 const float PAREDE_ALTURA  = 20.0f;
@@ -185,6 +191,8 @@ const char* CAMINHO_MODELO_CAMPO = "assets/models/Campo_Oficial.glb";
 const char* CAMINHO_MODELO_TRAVE = "assets/models/Trave_Oficial.glb";
 const char* CAMINHO_MODELO_ARQUIBANCADA = "assets/models/Arquibancadas_Oficial.glb";
 const char* CAMINHO_MODELO_REFLETOR     = "assets/models/low_poly_reflector.glb";
+const char* CAMINHO_MODELO_BOLA         = "assets/models/bola.glb";
+const char* CAMINHO_MODELO_NUVEM        = "assets/models/low_poly_cloud.glb";
 
 // O Origin do campo foi movido (no Blender) pra parte externa, no topo do
 // gramado -- ou seja, o (0,0,0) do modelo ja e exatamente a superficie do
@@ -251,9 +259,9 @@ const float ARQUIBANCADA_OFFSET_Y = -2.1f;
 // Ajuste REFLETOR_X para afastar/aproximar dos gols,
 //        REFLETOR_Y para subir/descer,
 //        REFLETOR_Z para afastar/aproximar da lateral.
-const float REFLETOR_X      =  GOL_X;   // alinhado com as traves (±16)
-const float REFLETOR_Y      =  0.0f;    // base no chao
-const float REFLETOR_Z      =  5.5f;    // fora da lateral do campo
+const float REFLETOR_X      =  17.1f;   // alinhado com as traves (±16)
+const float REFLETOR_Y      =  -0.8f;    // base no chao
+const float REFLETOR_Z      =  11.0f;    // fora da lateral do campo
 const float REFLETOR_ESCALA =  1.0f;    // mesma escala dos outros modelos
 
 
@@ -265,6 +273,26 @@ const float ARQUIBANCADA_OFFSET_Z = 10.2f;
 // (as dimensoes informadas sao bem maiores que as do campo/trave), use
 // essa escala uniforme pra redimensionar. 1.0 = tamanho original.
 const float ARQUIBANCADA_ESCALA = 1.0f;
+
+// ============================================================
+// NUVENS -- ceu decorativo no fundo do estadio
+// ============================================================
+// 3 nuvens posicionadas nas areas marcadas (esquerda, centro, direita),
+// bem acima e atras da arquibancada. Sem fisica nem colisao.
+// O modelo tem BB ~6x2.4x5.7 unidades. Escala 3.5 -> ~21x8x20 unidades,
+// suficiente para cobrir bem as regioes do ceu visiveis pela camera.
+//
+// Camera: gluLookAt(0,10,20, 0,0,0) => ceu visivel em Y alto, Z negativo.
+// Arquibancada fica em Z ~+10. Nuvens devem ficar em Z negativo (fundo)
+// e Y alto para aparecerem acima da arquibancada na projecao perspectiva.
+const float NUVEM_Y      = 6.4f;   // altura no ceu
+const float NUVEM_Z      = -18.0f;  // fundo, atras da arquibancada
+const float NUVEM_ESCALA =  0.8f;   // tamanho das nuvens
+// Centro geometrico do modelo (em coords de modelo, antes da escala)
+// usado para centralizar o pivot de cada nuvem em sua posicao de mundo.
+const float NUVEM_CENTRO_X =  1.964f;
+const float NUVEM_CENTRO_Y =  0.002f;
+const float NUVEM_CENTRO_Z = -0.611f;
 
 //=====================================
 // MODELO 3D (ASSIMP)
@@ -596,6 +624,8 @@ Modelo3D modeloCampo;
 Modelo3D modeloTrave;
 Modelo3D modeloArquibancada;
 Modelo3D modeloRefletor;
+Modelo3D modeloBola;
+Modelo3D modeloNuvem;
 
 // ============================================================
 // MODELO ANIMADO (jogador FBX com animacao de chute)
@@ -634,6 +664,7 @@ Modelo3D modeloRefletor;
 //   Assim o modelo fica centrado em X/Z com a base no chao.
 
 const char* CAMINHO_MODELO_JOGADOR = "assets/models/jogador2.fbx";
+const char* CAMINHO_MODELO_CPU     = "assets/models/jogadorIA.fbx";
 
 // Indice das animacoes de chute no FBX
 // Object_3     animado por anim[0]: 'Object_3|Object_3.001Action'
@@ -960,8 +991,10 @@ private:
     }
 };
 
-// Instancia global do modelo do jogador (compartilhado pelos dois lados)
+// Instancia do modelo do jogador humano
 ModeloAnimado modeloJogador;
+// Instancia do modelo da CPU (jogadorIA.fbx -- mesma estrutura, visual diferente)
+ModeloAnimado modeloJogadorIA;
 
 // ---- Estado de animacao ----
 // O jogador humano tem animacao de chute na tecla Z
@@ -1066,39 +1099,48 @@ void colisaoJogador(float px, float py, float velMovimentoJogador, float direcao
 
         if(!jaTocando)
         {
-            // ── Impulso vetorial completo no primeiro frame de contato ──
-            // A velocidade resultante e sempre na direcao normal de saida (nx,ny)
-            // com magnitude base + contribuicoes do movimento e intencao ofensiva.
-            float forca = 0.18f;
+            // ── Impulso no primeiro frame de contato ──
+            // Calcula velocidade relativa na direcao normal
+            float velNormal = velBolaX * nx + velBolaY * ny;
 
-            // Componente na direcao normal: garante que a bola SEMPRE sai para longe
-            float velNormal = velBolaX * nx + velBolaY * ny; // vel atual projetada
-            // Velocidade minima de separacao na direcao normal
-            float velMinSep = forca;
-            // Se a bola ja esta indo para longe (velNormal > 0), ainda assim
-            // aplicamos pelo menos velMinSep para garantir separacao rapida
-            float impulsoNormal = (velNormal < velMinSep) ? (velMinSep - velNormal) : 0.0f;
+            // Forca de separacao minima garantida
+            float forca = 0.20f;
 
+            // Aplica impulso apenas se a bola nao ja esta saindo rapido o suficiente
+            float impulsoNormal = (velNormal < forca) ? (forca - velNormal) : 0.0f;
             velBolaX += nx * impulsoNormal;
             velBolaY += ny * impulsoNormal;
 
-            // Empurrao ofensivo (direcao do gol adversario) e da corrida
-            velBolaX += direcaoAtaque * 0.04f;
-            velBolaX += velMovimentoJogador * 0.25f;
+            // Empurrao ofensivo (direcao do gol adversario)
+            velBolaX += direcaoAtaque * 0.05f;
+            // Influencia do movimento horizontal do jogador
+            velBolaX += velMovimentoJogador * 0.30f;
 
-            // Componente Y minima para garantir que a bola suba levemente
-            if(velBolaY < 0.04f) velBolaY = 0.04f;
+            // Componente Y minima para a bola subir levemente no toque
+            if(velBolaY < 0.05f) velBolaY = 0.05f;
+
+            // Limita velocidade maxima para evitar tunelamento
+            const float VEL_MAX = 0.55f;
+            float speed = sqrt(velBolaX*velBolaX + velBolaY*velBolaY);
+            if(speed > VEL_MAX)
+            {
+                velBolaX = velBolaX / speed * VEL_MAX;
+                velBolaY = velBolaY / speed * VEL_MAX;
+            }
 
             jaTocando = true;
         }
 
-        // ── Separacao positional completa em um unico frame ──
-        // Margem generosa (10% do raio de colisao) garante que no proximo
-        // frame dist > raioColisao e jaTocando seja resetado corretamente.
-        float margem = raioColisao * 0.12f;
+        // ── Separacao posicional completa ──
+        // Margem de 15% garante que no proximo frame a sobreposicao
+        // nao reative imediatamente, eliminando vibracao.
+        float margem = raioColisao * 0.15f;
         float sobreposicao = raioColisao - dist + margem;
         bolaX += nx * sobreposicao;
         bolaY += ny * sobreposicao;
+
+        // Nao deixa a bola ser empurrada para baixo do chao
+        if(bolaY < raioBola) bolaY = raioBola;
     }
     else
     {
@@ -1141,12 +1183,12 @@ void resolverColisaoDupla()
     }
 
     // Garante componente vertical positiva (para cima) para destravar
-    if(ey < 0.3f) ey = 0.3f;
+    if(ey < 0.4f) ey = 0.4f;
     float len = sqrt(ex*ex + ey*ey);
     ex /= len; ey /= len;
 
-    // Impulso de ejecao: sobrescreve velocidade atual completamente
-    float forcaEjecao = 0.20f;
+    // Impulso de ejecao mais forte para garantir separacao real
+    float forcaEjecao = 0.28f;
     velBolaX = ex * forcaEjecao;
     velBolaY = ey * forcaEjecao;
 
@@ -1388,10 +1430,13 @@ PrevisaoBola preverBola(int passos)
         py += vy;
         px += vx;
 
+        // Mesmo coeficiente de restituicao e atrito da fisica real
         if(py < raioBola)
         {
             py = raioBola;
-            vy *= -0.8f;
+            vy *= -0.85f;
+            vx *= 0.88f;
+            if(vy < 0.04f && fabsf(vx) > 0.03f) vy = 0.04f;
         }
     }
 
@@ -1435,10 +1480,7 @@ void update(int)
     if(!bolaEmSaque)
         bolaX += velBolaX * dt;
 
-    // Leve atrito do ar: a bola perde um pouco de energia horizontal com o
-    // tempo, em vez de quicar pra sempre com a mesma forca (deixa menos
-    // artificial). Usamos powf pra esse "decaimento" continuar correto
-    // independente do dt (em vez de so multiplicar por 0.999 a cada frame).
+    // Atrito do ar: leve decaimento horizontal, mantido independente de dt
     velBolaX *= powf(0.999f, dt);
 
     // Chao
@@ -1446,39 +1488,50 @@ void update(int)
     {
         bolaY = raioBola;
 
-        // Dentro da caixa do gol (atras da linha de frente), o teto da rede
-        // do modelo do Blender e inclinado em direcao ao fundo. Com o
-        // rebote normal (-0.8), a bola pode ficar quicando ali sem nunca
-        // ganhar velocidade suficiente pra escapar de volta pro campo --
-        // por isso, so' ali dentro, o rebote vertical e mais forte e a
-        // bola recebe um empurraozinho horizontal de volta pra abertura.
         bool dentroGolDireito  = (bolaX >  GOL_FRENTE);
         bool dentroGolEsquerdo = (bolaX < -GOL_FRENTE);
 
         if(dentroGolDireito || dentroGolEsquerdo)
         {
+            // Dentro do gol: quique forte para a bola conseguir sair
             velBolaY *= -0.95f;
             velBolaX += (dentroGolDireito ? -1.0f : 1.0f) * 0.025f * dt;
-
-            // Garante um salto minimo, pra ela sempre conseguir voltar a
-            // quicar em direcao a abertura em vez de ficar "morta" no chao
             if(velBolaY < 0.12f)
                 velBolaY = 0.12f;
         }
         else
         {
-            velBolaY *= -0.8f;
+            // Campo aberto: restituicao mais alta (0.72 -> 0.85) para
+            // quiques mais vivos; atrito horizontal reduzido (0.88) para
+            // a bola nao parar bruscamente no chao.
+            velBolaY *= -0.85f;
+            velBolaX *= powf(0.88f, dt);
+
+            // Anti-morte: se a bola quase parou verticalmente mas ainda
+            // tem velocidade horizontal relevante, garante um salto minimo
+            // para nao ficar rastejando eternamente no chao.
+            if(velBolaY < 0.04f && fabsf(velBolaX) > 0.03f)
+                velBolaY = 0.04f;
+
+            // Se a bola ficou quase completamente parada (sem ninguem por
+            // perto para interagir), aplica um micro-impulso para cima para
+            // destravar a partida sem parecer artificial.
+            if(fabsf(velBolaX) < 0.02f && velBolaY < 0.02f)
+                velBolaY = 0.06f;
         }
 
         if(bolaEmSaque)
         {
-            // Bola terminou o saque (caiu reta ate o chao).
-            // Nao recebe velX aqui -- o quique normal de velBolaY*-0.8
-            // ja aconteceu acima. Apenas libera o movimento horizontal
-            // para que os jogadores possam interagir com ela normalmente.
-            velBolaX = 0.0f; // sem ricochete lateral aleatorio
+            velBolaX = 0.0f;
             bolaEmSaque = false;
         }
+    }
+
+    // Teto invisivel: bola nao pode sair da area visivel da camera
+    if(bolaY + raioBola > TETO_Y && velBolaY > 0.0f)
+    {
+        bolaY    = TETO_Y - raioBola;
+        velBolaY *= -0.75f; // rebate com leve amortecimento
     }
 
     // ---- Jogador (andar e pular juntos, pra pegar mais impulso) ----
@@ -1505,107 +1558,221 @@ void update(int)
         velJogadorY = 0;
     }
 
-    // ---- CPU ----
-    // Antecipa pra onde a bola esta indo (em vez de so reagir a posicao
-    // atual), e decide um alvo de X com base na situacao:
+    // ================================================================
+    // IA DA CPU -- versao competitiva
+    // ================================================================
     //
-    //   1) Bola ameacando o proprio gol -> prioriza defesa, vai direto
-    //      interceptar a trajetoria prevista, sem economizar.
-    //   2) Bola ao alcance (mas sem ameaca imediata) -> se engaja, indo
-    //      ao encontro da trajetoria prevista, misturado com a posicao
-    //      de casa (pra nao ficar "colada" na bola o tempo todo).
-    //   3) Bola fora de alcance -> volta/fica numa posicao estrategica
-    //      de casa, em vez de perseguir o campo todo.
-    // Previsao mais longa (40 passos) para decisoes mais antecipadas
-    PrevisaoBola previsao  = preverBola(40);
-    PrevisaoBola previsao8 = preverBola(8); // curto prazo para pulo
+    // Filosofia:
+    //   1. Previsao de trajetoria em varios horizontes de tempo.
+    //   2. Classificacao clara da situacao (defesa / ataque / neutro).
+    //   3. Alvo de posicionamento que antecipa a bola, nao apenas segue.
+    //   4. Decisao de pulo baseada em quando a bola ficara no alcance,
+    //      nao so em onde ela esta agora.
+    //   5. Direcao de cabeceio controlada: tenta sempre bater em direcao
+    //      ao gol adversario (-X), nunca jogando a bola para o proprio gol.
+    //   6. Velocidade de movimento ligeiramente maior que o jogador,
+    //      compensada por decisoes mais conservadoras (nao fica oscilando).
 
-    // ---- Decidir alvo horizontal da CPU ----
-    //
-    // 3 modos de operacao baseados na posicao da bola:
-    //
-    //  DEFESA URGENTE: bola no lado da CPU e vindo em direcao ao gol.
-    //    CPU se posiciona entre a bola e o gol (intercepta trajetoria).
-    //
-    //  ATAQUE: bola no lado do jogador ou no centro.
-    //    CPU avanca em direcao a bola para chutar ao gol.
-    //    Usa previsao longa para antecipar chegada.
-    //
-    //  POSICIONAMENTO: bola longe e indo para longe do gol da CPU.
-    //    CPU recua um pouco para posicao estrategica, sem ir ate o fundo.
+    // ---- Previsoes de trajetoria ----
+    // Simula a bola para frente em varios horizontes para a CPU
+    // tomar decisoes diferentes conforme a urgencia.
+    PrevisaoBola prev6  = preverBola(6);   // iminente  : pulo reativo
+    PrevisaoBola prev15 = preverBola(15);  // curto     : onde chegar logo
+    PrevisaoBola prev30 = preverBola(30);  // medio     : posicionamento
+    PrevisaoBola prev55 = preverBola(55);  // longo     : onde a bola vai cair
 
+    // ---- Classificacao da situacao ----
+    float distCpuBola  = sqrtf((bolaX-cpuX)*(bolaX-cpuX) + (bolaY-cpuY)*(bolaY-cpuY));
+    bool  cpuNoChaoAgora = (cpuY <= raioCabeca + 0.05f);
+
+    // Bola vindo em direcao ao gol da CPU (velX positiva)
+    bool bolaVindoParaCpu  = (velBolaX > 0.01f);
+    // Bola no lado da CPU (metade direita do campo)
+    bool bolaNoLadoCpu     = (bolaX > 0.5f);
+    // Bola no lado do jogador (metade esquerda)
+    bool bolaNoLadoJogador = (bolaX < -2.0f);
+    // Bola descendo
+    bool bolaCaindo        = (velBolaY < -0.005f);
+
+    // AMEACA: bola se aproximando do gol da CPU com velocidade relevante
+    // Limiar mais cedo (GOL_X - 9) para dar mais tempo de reagir
+    bool bolaAmeacandoGol = bolaNoLadoCpu && bolaVindoParaCpu
+                            && (bolaX > GOL_X - 9.0f);
+
+    // PERIGO IMEDIATO: bola muito perto do gol, qualquer altura
+    bool perigoImediato = (bolaX > GOL_X - 4.0f);
+
+    // CHANCE DE TOQUE: bola ao alcance do cabecio agora ou em breve
+    float raioToque = raioCabeca + raioBola + 0.8f;
+    bool bolaNaZonaDeToque = (distCpuBola < raioToque)
+                              && (bolaY >= raioBola)
+                              && (bolaY < cpuY + 3.5f);
+
+    // ================================================================
+    // ALVO HORIZONTAL
+    // ================================================================
     float alvoCpuX;
-    float distBolaGolCpu = bolaX; // positivo = perto do gol da CPU (direita)
 
-    // Bola ameacando: no lado da CPU (bolaX > limiar) com velocidade positiva
-    bool bolaVindoParaCpu  = (velBolaX > 0.0f);
-    bool bolaNoLadoCpu     = (bolaX > 0.0f);
-    bool bolaAmeacandoGol  = (bolaX > CPU_LIMIAR_DEFESA_X) && bolaVindoParaCpu;
-    bool bolaLongeEInofens = (bolaX < -5.0f); // bola bem no lado do jogador
-
-    if(bolaAmeacandoGol)
+    if(perigoImediato)
     {
-        // DEFESA: posiciona no X previsto da bola, priorizando interceptar
-        alvoCpuX = previsao.x;
+        // PERIGO: bola quase no gol -- vai DIRETO nela, sem previsao.
+        // Prioridade absoluta, nao pondera com nada mais.
+        alvoCpuX = bolaX;
     }
-    else if(bolaLongeEInofens)
+    else if(bolaAmeacandoGol)
     {
-        // POSICIONAMENTO: bola no lado do jogador e nao e ameaca.
-        // CPU avanca ate o meio campo para pressionar, mas com cautela.
-        // Fica em X=2 (um pouco alem do centro) sem ir mais fundo.
-        float alvoAtaque = previsao.x;
-        float alvoEstrategico = 2.0f; // pressiona sem se expor
-        // Mistura: 70% na previsao (quer atacar) + 30% estrategico
-        alvoCpuX = alvoAtaque * 0.7f + alvoEstrategico * 0.3f;
-        // Nunca passa do meio campo atacando
-        if(alvoCpuX < -LIMITE_CAMPO_X * 0.5f)
-            alvoCpuX = -LIMITE_CAMPO_X * 0.5f;
+        // DEFESA: intercept a trajetoria prevista no curto/medio prazo.
+        // Se a bola esta proxima usa previsao curta (mais precisa),
+        // se esta longe usa previsao media para chegar antes.
+        if(distCpuBola < 4.0f)
+            alvoCpuX = prev15.x;
+        else
+            alvoCpuX = prev30.x;
+
+        // Nunca recua mais do que a linha de frente do proprio gol
+        if(alvoCpuX > LIMITE_CAMPO_X) alvoCpuX = LIMITE_CAMPO_X;
+    }
+    else if(bolaNaZonaDeToque)
+    {
+        // ATAQUE IMEDIATO: bola ao alcance -- posiciona-se ligeiramente
+        // ATRAS da bola (em X) para que o cabeceio saia em direcao a -X.
+        // "Atras" em relacao ao gol adversario = X menor que bolaX.
+        // Isso faz a cabeca empurrar a bola para a esquerda (gol adv.).
+        alvoCpuX = bolaX + 0.3f; // fica levemente mais perto do proprio gol
+                                   // que a bola -> normal da colisao aponta para -X
+    }
+    else if(bolaNoLadoJogador)
+    {
+        // POSICIONAMENTO: bola no lado do jogador, sem ameaca imediata.
+        // CPU avanca ate uma posicao de pressao levemente agressiva,
+        // misturando previsao longa (onde a bola deve chegar) com
+        // um ponto de pressao fixo um pouco no lado adversario.
+        float alvoPressao  = -1.5f;  // ligeiramente no meio-campo adversario
+        float alvoPrevisao = prev55.x;
+        alvoCpuX = alvoPrevisao * 0.65f + alvoPressao * 0.35f;
+        // Nao avanca mais do que 35% do campo adversario
+        if(alvoCpuX < -LIMITE_CAMPO_X * 0.35f)
+            alvoCpuX = -LIMITE_CAMPO_X * 0.35f;
     }
     else
     {
-        // ATAQUE: bola no centro ou lado da CPU mas sem ameaca imediata.
-        // CPU persegue diretamente a previsao da bola.
-        alvoCpuX = previsao.x;
+        // NEUTRO: bola no centro ou lado da CPU sem urgencia.
+        // Antecipa a previsao de medio prazo.
+        // Quando a bola esta caindo e proxima, vai buscar direto.
+        if(bolaNoLadoCpu && bolaCaindo && distCpuBola < 4.5f)
+            alvoCpuX = prev15.x;
+        else
+            alvoCpuX = prev30.x;
     }
 
+    // Clamp ao campo
     if(alvoCpuX >  LIMITE_CAMPO_X) alvoCpuX =  LIMITE_CAMPO_X;
     if(alvoCpuX < -LIMITE_CAMPO_X) alvoCpuX = -LIMITE_CAMPO_X;
 
-    // Zona-morta: evita tremor proximo ao alvo
-    float distAoAlvo = alvoCpuX - cpuX;
+    // ================================================================
+    // MOVIMENTO HORIZONTAL
+    // ================================================================
+    // Zona-morta adaptativa: mais apertada em situacoes de urgencia
+    // para a CPU reagir mais rapido sem ficar oscilando no neutro.
+    float zonaMorta;
+    if(perigoImediato)
+        zonaMorta = 0.05f;
+    else if(bolaAmeacandoGol)
+        zonaMorta = CPU_ZONA_MORTA * 0.35f;
+    else
+        zonaMorta = CPU_ZONA_MORTA;
+
+    float distAoAlvo  = alvoCpuX - cpuX;
     float movCpuAtual = 0.0f;
 
-    if(distAoAlvo > CPU_ZONA_MORTA)
+    // Velocidade de movimento: 10% maior que o jogador para compensar
+    // o tempo de reacao. Esse valor e LOCAL (nao altera velMovCpu global).
+    const float VEL_CPU_EFETIVA = velMovCpu * 1.10f;
+
+    if(distAoAlvo > zonaMorta)
     {
-        cpuX += velMovCpu * dt;
-        movCpuAtual = velMovCpu;
+        cpuX += VEL_CPU_EFETIVA * dt;
+        movCpuAtual = VEL_CPU_EFETIVA;
     }
-    else if(distAoAlvo < -CPU_ZONA_MORTA)
+    else if(distAoAlvo < -zonaMorta)
     {
-        cpuX -= velMovCpu * dt;
-        movCpuAtual = -velMovCpu;
+        cpuX -= VEL_CPU_EFETIVA * dt;
+        movCpuAtual = -VEL_CPU_EFETIVA;
     }
 
-    // ---- Decisao de pulo da CPU ----
-    // Pula quando:
-    //  a) Bola esta proxima e acessivel (toque possivel neste frame)
-    //  b) Bola vai cair proxima nos proximos 8 frames (pulo antecipado)
-    float distCpuBola = sqrt((bolaX-cpuX)*(bolaX-cpuX) + (bolaY-cpuY)*(bolaY-cpuY));
+    // ================================================================
+    // DECISAO DE PULO -- baseada em "quando a bola estara no alcance"
+    // ================================================================
+    //
+    // Em vez de apenas checar se a bola esta perto AGORA, calculamos
+    // em qual frame (dentro de N passos) a bola ficara no raio de toque
+    // e verificamos se um pulo iniciado AGORA chegaria a essa altura
+    // nesse mesmo frame. Isso elimina pulos atrasados e pulos desperdicados.
 
-    // Condicao 1: bola ja esta no raio de toque
-    bool bolaNaAltura    = (bolaY > cpuY) && (bolaY < cpuY + 2.5f);
-    bool bolaProxima     = distCpuBola < (raioCabeca + raioBola + 0.5f);
-    bool chanceImediata  = bolaProxima && bolaNaAltura;
+    bool devePular = false;
 
-    // Condicao 2: previsao de curto prazo indica que a bola vai chegar perto
-    float distPrev = fabs(previsao8.x - cpuX);
-    bool bolaCaindoPerto = (distPrev < raioCabeca + 1.2f) && (previsao8.y < cpuY + 2.5f);
+    if(cpuNoChaoAgora)
+    {
+        // Simula o pulo da CPU: a partir do chao (cpuY = raioCabeca),
+        // com velCpuY = 0.12, quanto tempo leva pra atingir cada altura?
+        // A altura da CPU no frame F do pulo e:
+        //   hCpu(F) = raioCabeca + 0.12*F + 0.5*gravidade*F*F
+        // A bola no frame F tem posicao prev(F).
+        // Queremos: dist(bola_F, cpu_F) < raioToque
 
-    // Condicao 3: bola esta no lado da CPU e CPU pode intercepta-la pulando
-    bool pularParaInterceptar = bolaNoLadoCpu && (bolaY < cpuY + 3.0f) && (distCpuBola < 3.0f);
+        // Simulamos bola e pulo juntos por ate 35 frames
+        float simBolaX = bolaX, simBolaY = bolaY;
+        float simVX = velBolaX, simVY = velBolaY;
+        float simCpuY = raioCabeca;
+        float simVCpuY = 0.12f; // velocidade do pulo
 
-    bool devePular = (chanceImediata || bolaCaindoPerto || pularParaInterceptar)
-                     && cpuY <= raioCabeca + 0.05f;
+        for(int f = 1; f <= 35; f++)
+        {
+            // Avanca bola
+            simVY += gravidade;
+            simBolaY += simVY;
+            simBolaX += simVX;
+            if(simBolaY < raioBola)
+            {
+                simBolaY = raioBola;
+                simVY *= -0.85f;
+                simVX *= 0.88f;
+            }
+
+            // Avanca pulo da CPU (posicao X atual + movimento horizontal)
+            float simCpuX = cpuX + movCpuAtual * f;
+            simVCpuY += gravidade;
+            simCpuY  += simVCpuY;
+            if(simCpuY < raioCabeca) simCpuY = raioCabeca;
+
+            // Checa se nesse frame a bola estaria no alcance
+            float ddx = simBolaX - simCpuX;
+            float ddy = simBolaY - simCpuY;
+            float dd  = sqrtf(ddx*ddx + ddy*ddy);
+
+            if(dd < raioToque + 0.3f)
+            {
+                // Ha uma janela de toque: vale pular agora?
+                // So pula se a bola estiver acima do chao (nao adianta
+                // pular para bater em bola rasteira) e se a CPU estara
+                // realmente em posicao de toque (nao so passando perto).
+                if(simBolaY > raioBola + 0.2f)
+                    devePular = true;
+                break;
+            }
+        }
+
+        // Caso adicional: perigo imediato com bola alta -- pula mesmo
+        // que a simulacao nao tenha detectado janela perfeita.
+        if(!devePular && perigoImediato && bolaY > cpuY + 0.3f
+           && distCpuBola < 4.0f)
+            devePular = true;
+
+        // Nao pula se a bola esta rasteira e vindo pelo chao
+        // (e melhor ficar no chao para interceptar no nivel certo)
+        if(devePular && bolaY < raioBola + 0.4f && bolaCaindo)
+            devePular = false;
+    }
 
     if(devePular)
         velCpuY = 0.12f;
@@ -1629,8 +1796,14 @@ void update(int)
     resolverColisaoPersonagens();
 
     // Colisoes com a bola (uma vez por toque, ver colisaoJogador)
+    bool cpuTocavaAntes = cpuTocandoBola;
     colisaoJogador(jogadorX, jogadorY, movJogadorAtual, 1.0f, jogadorTocandoBola);
     colisaoJogador(cpuX, cpuY, movCpuAtual, -1.0f, cpuTocandoBola);
+
+    // Dispara animacao de chute da CPU no instante em que ela toca a bola
+    if(!cpuTocavaAntes && cpuTocandoBola && tempoAnimChuteCPU < 0.0f)
+        tempoAnimChuteCPU = 0.0f;
+
     // Caso especial: bola ainda entre os dois apos os dois push-outs
     resolverColisaoDupla();
 
@@ -1645,17 +1818,23 @@ void update(int)
     bolaXAnterior = bolaX;
 
     // ---- Animacao de chute do jogador (tecla Z) ----
-    // Avanca o tempo da animacao pelo dt real do frame. Quando a animacao
-    // termina (tempo >= duracao), volta ao estado de repouso (-1).
     if(tempoAnimChuteJogador >= 0.0f)
     {
-        // dt ja e o fator de escala de tempo (1.0 = 16ms nominais)
-        // Convertemos pra segundos reais para avancar o tempo da animacao
         float dtAnimSeg = (16.0f * dt) / 1000.0f;
         tempoAnimChuteJogador += dtAnimSeg * ANIM_VELOCIDADE;
         float duracaoChute = modeloJogador.getDuracaoChute();
         if(duracaoChute > 0.0f && tempoAnimChuteJogador >= duracaoChute)
-            tempoAnimChuteJogador = -1.0f; // animacao concluida, volta ao repouso
+            tempoAnimChuteJogador = -1.0f;
+    }
+
+    // ---- Animacao de chute da CPU ----
+    if(tempoAnimChuteCPU >= 0.0f)
+    {
+        float dtAnimSeg = (16.0f * dt) / 1000.0f;
+        tempoAnimChuteCPU += dtAnimSeg * ANIM_VELOCIDADE;
+        float duracaoChute = modeloJogadorIA.getDuracaoChute();
+        if(duracaoChute > 0.0f && tempoAnimChuteCPU >= duracaoChute)
+            tempoAnimChuteCPU = -1.0f;
     }
 
     glutPostRedisplay();
@@ -1757,11 +1936,21 @@ void desenharRefletor(float direcaoX, float direcaoZ)
 
     // Rotacao: refletor esquerdo (direcaoX < 0) gira 180 graus em Y
     // para espelhar corretamente; refletor do lado -Z gira em Y tambem
-    float rotY = 0.0f;
-    if(direcaoX < 0.0f) rotY += 180.0f;
-    if(direcaoZ < 0.0f) rotY += 180.0f;
-    if(rotY != 0.0f) glRotatef(rotY, 0.0f, 1.0f, 0.0f);
+    float rotY;
 
+    if (direcaoX < 0.0f && direcaoZ > 0.0f)          // Frente esquerda
+        rotY = -45.0f;
+
+    else if (direcaoX > 0.0f && direcaoZ > 0.0f)     // Frente direita
+        rotY = 45.0f;
+
+    else if (direcaoX < 0.0f && direcaoZ < 0.0f)     // Fundo esquerda
+        rotY = 45.0f;
+
+    else                                             // Fundo direita
+        rotY = -45.0f;
+
+    glRotatef(rotY, 0.0f, 1.0f, 0.0f);
     if(REFLETOR_ESCALA != 1.0f)
         glScalef(REFLETOR_ESCALA, REFLETOR_ESCALA, REFLETOR_ESCALA);
 
@@ -1924,6 +2113,34 @@ void desenharParedeFundo(float x)
 // DISPLAY
 //=====================================
 
+void desenharNuvens()
+{
+    // Posicoes X das 3 nuvens (esquerda, centro, direita),
+    // correspondendo as 3 areas marcadas no screenshot.
+    // O modelo e centralizado em seu pivot antes de ser transladado
+    // para a posicao de mundo, garantindo que cada nuvem fique
+    // exatamente onde indicado.
+    const float posX[3] = { -14.0f, 0.0f, 14.0f };
+
+    for(int i = 0; i < 3; i++)
+    {
+        glPushMatrix();
+
+        // 1) Vai para a posicao de mundo da nuvem
+        glTranslatef(posX[i], NUVEM_Y, NUVEM_Z);
+
+        // 2) Escala uniforme
+        glScalef(NUVEM_ESCALA, NUVEM_ESCALA, NUVEM_ESCALA);
+
+        // 3) Centraliza o modelo no pivot (subtrai o centro geometrico)
+        glTranslatef(-NUVEM_CENTRO_X, -NUVEM_CENTRO_Y, -NUVEM_CENTRO_Z);
+
+        modeloNuvem.desenhar();
+
+        glPopMatrix();
+    }
+}
+
 void display()
 {
     glClear(GL_COLOR_BUFFER_BIT |
@@ -1954,6 +2171,7 @@ void display()
     desenharCampo();
     desenharArquibancada();
     desenharRefletores();
+    desenharNuvens();
 
     // Usa GOL_X (= 14) -- antes estava hardcoded como 13, desalinhando a trave esquerda
     desenharGol(-GOL_X, -1.0f);
@@ -1982,36 +2200,36 @@ void display()
     }
     glPopMatrix();
 
-    // ---- CPU (mesmo modelo, lado direito, ataca para -X / esquerda) ----
+    // ---- CPU (modelo jogadorIA.fbx, lado direito, ataca para -X / esquerda) ----
     glPushMatrix();
     glTranslatef(cpuX, cpuY - raioCabeca, 0.0f);
     glRotatef(90.0f, 0.0f, 1.0f, 0.0f);
     if (tempoAnimChuteCPU >= 0.0f) {
-        float tps = modeloJogador.getTicksPerSecondChute();
-        modeloJogador.desenharChute(tempoAnimChuteCPU * tps);
+        float tps = modeloJogadorIA.getTicksPerSecondChute();
+        modeloJogadorIA.desenharChute(tempoAnimChuteCPU * tps);
     } else {
-        modeloJogador.desenharRepouso();
+        modeloJogadorIA.desenharRepouso();
     }
     glPopMatrix();
 
-    // Bola
-    glPushMatrix();
+    // Bola (modelo bola.glb substituindo glutSolidSphere de raio raioBola=0.5)
+    // O modelo tem raio ~21.417 unidades apos os transforms do glTF, e centro
+    // deslocado em (-8.051, 14.307, 2.009). Escala = raioBola / 21.417.
+    // A translacao de centralizacao e aplicada no espaco do modelo (antes da escala).
+    {
+        const float bolaModeRadius = 21.4167f;
+        const float bolaEscala     = raioBola / bolaModeRadius;
+        const float bolaCentroX    = -8.0509f;
+        const float bolaCentroY    = 14.3074f;
+        const float bolaCentroZ    =  2.0092f;
 
-    glColor3f(1,1,1);
-
-    glTranslatef(
-        bolaX,
-        bolaY,
-        0
-    );
-
-    glutSolidSphere(
-        raioBola,
-        30,
-        30
-    );
-
-    glPopMatrix();
+        glPushMatrix();
+        glTranslatef(bolaX, bolaY, 0.0f);
+        glScalef(bolaEscala, bolaEscala, bolaEscala);
+        glTranslatef(-bolaCentroX, -bolaCentroY, -bolaCentroZ);
+        modeloBola.desenhar();
+        glPopMatrix();
+    }
 
     desenharTexto(
         550,
@@ -2093,8 +2311,24 @@ void init()
     if(!modeloRefletor.carregar(CAMINHO_MODELO_REFLETOR))
         fprintf(stderr, "[Aviso] Refletor 3D nao carregado.\n");
 
+    if(!modeloBola.carregar(CAMINHO_MODELO_BOLA))
+        fprintf(stderr, "[Aviso] Modelo da bola nao carregado.\n");
+
+    if(!modeloNuvem.carregar(CAMINHO_MODELO_NUVEM))
+        fprintf(stderr, "[Aviso] Modelo da nuvem nao carregado.\n");
+
     if(!modeloJogador.carregar(CAMINHO_MODELO_JOGADOR))
         fprintf(stderr, "[Aviso] Modelo do jogador nao carregado.\n");
+
+    // Carrega o modelo da CPU e forca os mesmos valores de escala e offset
+    // do jogador humano -- ambos os FBX tem a mesma estrutura e proporcoes,
+    // entao devem ocupar exatamente o mesmo espaco fisico na cena.
+    if(!modeloJogadorIA.carregar(CAMINHO_MODELO_CPU))
+        fprintf(stderr, "[Aviso] Modelo da CPU nao carregado.\n");
+    modeloJogadorIA.escala  = modeloJogador.escala;
+    modeloJogadorIA.offsetX = modeloJogador.offsetX;
+    modeloJogadorIA.offsetY = modeloJogador.offsetY;
+    modeloJogadorIA.offsetZ = modeloJogador.offsetZ;
 }
 
 //=====================================
