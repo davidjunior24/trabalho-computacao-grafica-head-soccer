@@ -6,6 +6,12 @@
 #include <string>
 #include <vector>
 
+// Audio do gol (Windows Multimedia API -- nao precisa instalar nada extra)
+#include <windows.h>
+#include <mmsystem.h>
+#include <thread>
+#pragma comment(lib, "winmm.lib")
+
 // ============================================================
 // DEPENDENCIA EXTERNA: Assimp
 // ============================================================
@@ -193,6 +199,14 @@ const char* CAMINHO_MODELO_ARQUIBANCADA = "assets/models/Arquibancadas_Oficial.g
 const char* CAMINHO_MODELO_REFLETOR     = "assets/models/low_poly_reflector.glb";
 const char* CAMINHO_MODELO_BOLA         = "assets/models/bola.glb";
 const char* CAMINHO_MODELO_NUVEM        = "assets/models/low_poly_cloud.glb";
+
+// Caminho do audio de gol (WAV puro, sem compressao)
+const char* CAMINHO_SOM_GOL = "assets/models/sounds/sound_goal.wav";
+
+// Buffer que guarda o WAV inteiro na RAM apos carregarSomGol().
+// PlaySound com SND_MEMORY toca direto da RAM, sem acesso ao disco,
+// eliminando o delay das primeiras reproducoes.
+static std::vector<char> bufferSomGol;
 
 // O Origin do campo foi movido (no Blender) pra parte externa, no topo do
 // gramado -- ou seja, o (0,0,0) do modelo ja e exatamente a superficie do
@@ -1297,6 +1311,34 @@ void resolverColisaoPersonagens()
 // GOL / TRAVE / PAREDE DE FUNDO
 //=====================================
 
+// Carrega o WAV inteiro na RAM uma unica vez (chamado no init).
+// A partir dai tocarSomGol() toca direto do buffer, sem tocar no disco.
+void carregarSomGol()
+{
+    FILE* f = fopen(CAMINHO_SOM_GOL, "rb");
+    if(!f)
+    {
+        fprintf(stderr, "[Audio] Nao foi possivel abrir %s\n", CAMINHO_SOM_GOL);
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    long tamanho = ftell(f);
+    rewind(f);
+    bufferSomGol.resize((size_t)tamanho);
+    fread(bufferSomGol.data(), 1, (size_t)tamanho, f);
+    fclose(f);
+}
+
+// Toca o som de gol em uma thread separada, eliminando qualquer bloqueio
+// que o PlaySound possa causar na thread principal do jogo.
+void tocarSomGol()
+{
+    if(bufferSomGol.empty()) return;
+    std::thread([](){
+        PlaySound(bufferSomGol.data(), NULL, SND_MEMORY | SND_SYNC | SND_NODEFAULT);
+    }).detach();
+}
+
 // O gol funciona como uma caixa com tres lados solidos (trave/topo, fundo e
 // laterais) e uma abertura na frente, voltada pro campo.
 //
@@ -1328,6 +1370,7 @@ void tratarGol(float direcao)
         if(bolaY < GOL_TRAVE_Y - raioBola)
         {
             // Cruzou a linha por dentro da abertura: GOL!
+            tocarSomGol();
             if(direcao > 0)
                 placarJogador++;
             else
@@ -2290,6 +2333,9 @@ void init()
     );
 
     srand((unsigned int)time(nullptr));
+
+    // Pre-carrega o WAV do gol na RAM para eliminar delay na primeira reproducao
+    carregarSomGol();
 
     resetarBola();
     resetarPosicoes();
