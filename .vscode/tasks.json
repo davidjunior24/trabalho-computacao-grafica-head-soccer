@@ -4,19 +4,25 @@
         {
             "type": "shell",
             "label": "C/C++: g++.exe build active file",
-            "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+            "command": "g++",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
-                "${file}",
+                "-Iinclude",
+                "src/*.cpp",
                 "-o",
-                "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                "main.exe",
                 "-lfreeglut",
                 "-lopengl32",
-                "-lglu32"
+                "-lglu32",
+                "-lassimp",
+                "-lpthread",
+                "-lSDL2main",
+                "-lSDL2",
+                "-lSDL2_mixer"
             ],
             "options": {
-                "cwd": "C:\\msys64\\ucrt64\\bin"
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [
                 "$gcc"
@@ -25,7 +31,7 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "detail": "Compilador para OpenGL"
+            "detail": "Compilador para OpenGL com Assimp"
         }
     ]
 }
