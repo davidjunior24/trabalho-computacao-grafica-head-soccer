@@ -1,0 +1,65 @@
+{
+	"abstract" : true,
+	"artifacts" : 
+	[
+		{
+			"path" : "C:/msys64/ucrt64/bin/SDL2_mixer.dll"
+		},
+		{
+			"path" : "C:/msys64/ucrt64/lib/libSDL2_mixer.dll.a"
+		}
+	],
+	"backtrace" : 3,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"find_package"
+		],
+		"files" : 
+		[
+			"C:/msys64/ucrt64/lib/cmake/SDL2_mixer/sdl2_mixer-config.cmake",
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 1
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 12,
+				"parent" : 0
+			},
+			{
+				"file" : 0,
+				"parent" : 1
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 149,
+				"parent" : 2
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"id" : "SDL2_mixer::SDL2_mixer::@6890427a1f51a3e7e1df",
+	"imported" : true,
+	"local" : true,
+	"name" : "SDL2_mixer::SDL2_mixer",
+	"nameOnDisk" : "SDL2_mixer.dll",
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sources" : [],
+	"type" : "SHARED_LIBRARY"
+}

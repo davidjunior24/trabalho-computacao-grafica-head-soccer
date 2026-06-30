@@ -1,0 +1,1 @@
+ -lopengl32 -lglu32 C:/msys64/ucrt64/lib/libfreeglut.dll.a C:/msys64/ucrt64/lib/libassimp.dll.a C:/msys64/ucrt64/lib/libSDL2.dll.a C:/msys64/ucrt64/lib/libSDL2_mixer.dll.a -lopengl32 C:/msys64/ucrt64/lib/libz.dll.a C:/msys64/ucrt64/lib/libminizip.dll.a -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

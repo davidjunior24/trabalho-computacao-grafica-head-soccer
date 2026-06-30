@@ -1,0 +1,3 @@
+C:/Projeto Computacao Grafica/GAME/build/CMakeFiles/headsoccer.dir
+C:/Projeto Computacao Grafica/GAME/build/CMakeFiles/edit_cache.dir
+C:/Projeto Computacao Grafica/GAME/build/CMakeFiles/rebuild_cache.dir

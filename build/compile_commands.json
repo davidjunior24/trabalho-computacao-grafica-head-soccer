@@ -1,0 +1,62 @@
+[
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\Audio.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\Audio.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/Audio.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/Audio.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\GameState.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\GameState.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/GameState.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/GameState.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\HUD.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\HUD.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/HUD.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/HUD.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\Input.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\Input.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/Input.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/Input.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\Model3D.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\Model3D.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/Model3D.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/Model3D.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\ModeloAnimado.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\ModeloAnimado.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/ModeloAnimado.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/ModeloAnimado.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\Physics.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\Physics.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/Physics.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/Physics.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\Renderer.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\Renderer.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/Renderer.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/Renderer.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\Update.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\Update.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/Update.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/Update.cpp.obj"
+},
+{
+  "directory": "C:/Projeto Computacao Grafica/GAME/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe  @CMakeFiles/headsoccer.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\headsoccer.dir\\src\\main.cpp.obj -c \"C:\\Projeto Computacao Grafica\\GAME\\src\\main.cpp\"",
+  "file": "C:/Projeto Computacao Grafica/GAME/src/main.cpp",
+  "output": "CMakeFiles/headsoccer.dir/src/main.cpp.obj"
+}
+]

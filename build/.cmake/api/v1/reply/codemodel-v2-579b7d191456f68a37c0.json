@@ -1,0 +1,213 @@
+{
+	"configurations" : 
+	[
+		{
+			"abstractTargets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "FLAC::FLAC::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-FLAC__FLAC-Debug-e25897e8c423e00c4c30.json",
+					"name" : "FLAC::FLAC",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "GLUT::GLUT::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-GLUT__GLUT-Debug-fccc8d3d3cde73286ab2.json",
+					"name" : "GLUT::GLUT",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "MPG123::libmpg123::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-MPG123__libmpg123-Debug-5a95944d2859116d63d9.json",
+					"name" : "MPG123::libmpg123",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "OpenGL::GL::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-OpenGL__GL-Debug-243d1a92b9a9cf05f502.json",
+					"name" : "OpenGL::GL",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "OpenGL::GLU::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-OpenGL__GLU-Debug-92dcdd0806bc0e62e50a.json",
+					"name" : "OpenGL::GLU",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "OpusFile::opusfile::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-OpusFile__opusfile-Debug-bbfc50cf0784eddea2c5.json",
+					"name" : "OpusFile::opusfile",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SDL2::SDL2::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SDL2__SDL2-Debug-254c7b66912d1c8a928a.json",
+					"name" : "SDL2::SDL2",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SDL2::SDL2-static::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SDL2__SDL2-static-Debug-09490c87e3eefee111a9.json",
+					"name" : "SDL2::SDL2-static",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SDL2::SDL2main::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SDL2__SDL2main-Debug-5a3d1eff5c04001644ed.json",
+					"name" : "SDL2::SDL2main",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SDL2::SDL2test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SDL2__SDL2test-Debug-e4830779c4ba520954c9.json",
+					"name" : "SDL2::SDL2test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SDL2_mixer::SDL2_mixer::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SDL2_mixer__SDL2_mixer-Debug-b1012fbd2db099160ee6.json",
+					"name" : "SDL2_mixer::SDL2_mixer",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SDL2_mixer::SDL2_mixer-static::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SDL2_mixer__SDL2_mixer-static-Debug-43de0d2200bbffaf7003.json",
+					"name" : "SDL2_mixer::SDL2_mixer-static",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Vorbis::vorbisfile::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Vorbis__vorbisfile-Debug-ccc555f507e21aeef235.json",
+					"name" : "Vorbis::vorbisfile",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "WavPack::WavPack::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-WavPack__WavPack-Debug-2167b274cce84e6ce9e0.json",
+					"name" : "WavPack::WavPack",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "assimp::assimp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-assimp__assimp-Debug-f89614ae0f1d9bc6bb8a.json",
+					"name" : "assimp::assimp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "libxmp::libxmp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-libxmp__libxmp-Debug-b816b458289c5d0ade5a.json",
+					"name" : "libxmp::libxmp",
+					"projectIndex" : 0
+				}
+			],
+			"directories" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15
+					],
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f040eec181a89de70dbe.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15
+					],
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "HeadSoccer3D",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "headsoccer::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-headsoccer-Debug-940fc17ba07c10bb1b80.json",
+					"name" : "headsoccer",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Projeto Computacao Grafica/GAME/build",
+		"source" : "C:/Projeto Computacao Grafica/GAME"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	}
+}
