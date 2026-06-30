@@ -6,11 +6,15 @@
 #include <string>
 #include <vector>
 
-// Audio do gol (Windows Multimedia API -- nao precisa instalar nada extra)
-#include <windows.h>
-#include <mmsystem.h>
-#include <thread>
-#pragma comment(lib, "winmm.lib")
+// Audio: SDL2_mixer (mixagem real -- toca gol e apito simultaneamente)
+// Instalar no MSYS2/UCRT64: pacman -S mingw-w64-ucrt-x86_64-SDL2_mixer
+// Compilar: adicione `-lSDL2main -lSDL2 -lSDL2_mixer` nos flags de linkagem
+//
+// SDL_MAIN_HANDLED: impede que o SDL2 redefina main() como SDL_main() no
+// Windows -- sem isso o linker procura WinMain e nao acha o nosso main().
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_mixer.h>
 
 // ============================================================
 // DEPENDENCIA EXTERNA: Assimp
@@ -245,12 +249,17 @@ const char* CAMINHO_MODELO_BOLA         = "assets/models/bola.glb";
 const char* CAMINHO_MODELO_NUVEM        = "assets/models/low_poly_cloud.glb";
 
 // Caminho do audio de gol (WAV puro, sem compressao)
-const char* CAMINHO_SOM_GOL = "assets/models/sounds/sound_goal.wav";
+const char* CAMINHO_SOM_GOL      = "assets/models/sounds/sound_goal.wav";
+const char* CAMINHO_SOM_APITO    = "assets/models/sounds/apito.wav";
+const char* CAMINHO_MUSICA_FUNDO = "assets/models/sounds/musicafundo.wav";
 
-// Buffer que guarda o WAV inteiro na RAM apos carregarSomGol().
-// PlaySound com SND_MEMORY toca direto da RAM, sem acesso ao disco,
-// eliminando o delay das primeiras reproducoes.
-static std::vector<char> bufferSomGol;
+// Chunks SDL2_mixer carregados uma unica vez no init.
+// Mix_PlayChannel(-1, ...) toca em qualquer canal livre, permitindo
+// gol e apito tocarem simultaneamente sem um cancelar o outro.
+static Mix_Chunk* chunkSomGol   = nullptr;
+static Mix_Chunk* chunkSomApito = nullptr;
+// Mix_Music suporta loop nativo via Mix_PlayMusic(..., -1)
+static Mix_Music* musicaFundo   = nullptr;
 
 // O Origin do campo foi movido (no Blender) pra parte externa, no topo do
 // gramado -- ou seja, o (0,0,0) do modelo ja e exatamente a superficie do
@@ -1647,32 +1656,61 @@ void resolverColisaoPersonagens()
 // GOL / TRAVE / PAREDE DE FUNDO
 //=====================================
 
-// Carrega o WAV inteiro na RAM uma unica vez (chamado no init).
-// A partir dai tocarSomGol() toca direto do buffer, sem tocar no disco.
+// Inicializa o SDL2_mixer e carrega os dois WAVs. Chamado uma unica vez
+// no init(). SDL_MAIN_HANDLED ja foi definido antes dos includes, entao
+// o SDL nao interfere com o main() do GLUT.
 void carregarSomGol()
 {
-    FILE* f = fopen(CAMINHO_SOM_GOL, "rb");
-    if(!f)
+    SDL_SetMainReady(); // necessario quando SDL_MAIN_HANDLED esta definido
+    if(SDL_Init(SDL_INIT_AUDIO) < 0)
     {
-        fprintf(stderr, "[Audio] Nao foi possivel abrir %s\n", CAMINHO_SOM_GOL);
+        fprintf(stderr, "[Audio] SDL_Init falhou: %s\n", SDL_GetError());
         return;
     }
-    fseek(f, 0, SEEK_END);
-    long tamanho = ftell(f);
-    rewind(f);
-    bufferSomGol.resize((size_t)tamanho);
-    fread(bufferSomGol.data(), 1, (size_t)tamanho, f);
-    fclose(f);
+    if(Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0)
+    {
+        fprintf(stderr, "[Audio] Mix_OpenAudio falhou: %s\n", Mix_GetError());
+        return;
+    }
+    Mix_AllocateChannels(8);
+
+    chunkSomGol = Mix_LoadWAV(CAMINHO_SOM_GOL);
+    if(!chunkSomGol)
+        fprintf(stderr, "[Audio] Nao foi possivel carregar %s: %s\n",
+                CAMINHO_SOM_GOL, Mix_GetError());
+
+    // Musica de fundo: Mix_Music com loop infinito (-1).
+    // Toca em canal dedicado separado dos efeitos, entao nao conflita
+    // com gol nem apito.
+    musicaFundo = Mix_LoadMUS(CAMINHO_MUSICA_FUNDO);
+    if(musicaFundo)
+    {
+        Mix_PlayMusic(musicaFundo, -1); // -1 = loop infinito
+        Mix_VolumeMusic(20); // 0 = mudo, 128 = maximo
+    }
+    else
+        fprintf(stderr, "[Audio] Nao foi possivel carregar %s: %s\n",
+                CAMINHO_MUSICA_FUNDO, Mix_GetError());
 }
 
-// Toca o som de gol em uma thread separada, eliminando qualquer bloqueio
-// que o PlaySound possa causar na thread principal do jogo.
+void carregarSomApito()
+{
+    chunkSomApito = Mix_LoadWAV(CAMINHO_SOM_APITO);
+    if(!chunkSomApito)
+        fprintf(stderr, "[Audio] Nao foi possivel carregar %s: %s\n",
+                CAMINHO_SOM_APITO, Mix_GetError());
+}
+
 void tocarSomGol()
 {
-    if(bufferSomGol.empty()) return;
-    std::thread([](){
-        PlaySound(bufferSomGol.data(), NULL, SND_MEMORY | SND_SYNC | SND_NODEFAULT);
-    }).detach();
+    if(chunkSomGol)
+        Mix_PlayChannel(-1, chunkSomGol, 0);
+}
+
+void tocarSomApito()
+{
+    if(chunkSomApito)
+        Mix_PlayChannel(-1, chunkSomApito, 0);
 }
 
 // O gol funciona como uma caixa com tres lados solidos (trave/topo, fundo e
@@ -1707,6 +1745,7 @@ void tratarGol(float direcao)
         {
             // Cruzou a linha por dentro da abertura: GOL!
             tocarSomGol();
+            tocarSomApito();
             if(direcao > 0)
                 placarJogador++;
             else
@@ -2690,11 +2729,15 @@ void init()
 
     srand((unsigned int)time(nullptr));
 
-    // Pre-carrega o WAV do gol na RAM para eliminar delay na primeira reproducao
+    // Pre-carrega os WAVs na RAM para eliminar delay na primeira reproducao
     carregarSomGol();
+    carregarSomApito();
 
     resetarBola();
     resetarPosicoes();
+
+    // Toca o apito sinalizando o inicio da partida
+    tocarSomApito();
 
     // Carrega os modelos 3D (campo e trave). Se algum nao for encontrado,
     // um aviso e impresso no console e o jogo continua rodando -- só que
